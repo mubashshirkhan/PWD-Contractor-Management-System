@@ -474,7 +474,7 @@ class _ReadRepository:
                    t.scope_taluka
             FROM %s.organisations AS o
             JOIN %s.tenders AS t
-              ON t.organisation_chain LIKE '%%' || o.name || '%%'
+              ON t.organisation_chain LIKE '%%%%' || o.name || '%%%%'
              AND %s
             ORDER BY o.name, t.tender_id
         """ % (self.handle.schema, self.handle.schema, clauses)

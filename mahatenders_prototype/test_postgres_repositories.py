@@ -250,6 +250,7 @@ class PostgreSQLRepositoryTests(unittest.TestCase):
         statement, params = handle.connection.statements[0]
         self.assertIn("t.scope_district IN (%s, %s)", statement)
         self.assertIn("t.scope_taluka IN (", statement)
+        self.assertIn("LIKE '%%' || o.name || '%%'", statement)
         self.assertEqual(params[:2], ["Wardha", "Amravati"])
         self.assertEqual(params[2:], talukas)
 

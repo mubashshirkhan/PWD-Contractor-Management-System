@@ -594,7 +594,9 @@ class ScopedApi:
                 return HTTPStatus.OK, records[0]
             return HTTPStatus.NOT_FOUND, {"error": "in-scope tender not found"}
         if path == "/api/v1/stats":
-            _, records = self.tenders({})
+            status, records = self.tenders({})
+            if status != HTTPStatus.OK:
+                return status, records[0]
             district_counts: dict[str, int] = {}
             taluka_counts: dict[tuple[str, str], int] = {}
             for record in records:
