@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import base64
 import json
+import logging
 import os
 import sqlite3
 import threading
@@ -57,6 +58,7 @@ DEFAULT_PORT = 8890
 DEFAULT_CORS_ORIGIN = os.environ.get("MAHATENDERS_CORS_ORIGIN", "")
 DEFAULT_HOST = os.environ.get("MAHATENDERS_HOST", "0.0.0.0")
 LOCATION_SESSION_TTL = 15 * 60
+LOGGER = logging.getLogger(__name__)
 
 
 def json_bytes(value: object) -> bytes:
@@ -397,6 +399,7 @@ class ScopedApi:
         try:
             run, rows, detail_fields = self._location_reader.location_run_details(run_id)
         except Exception:
+            LOGGER.exception("PostgreSQL location search details failed")
             return HTTPStatus.INTERNAL_SERVER_ERROR, {
                 "error": "location search results are unavailable"
             }
@@ -485,6 +488,7 @@ class ScopedApi:
                     query.get("closing_after", [None])[0],
                 )
             except Exception:
+                LOGGER.exception("PostgreSQL tender listing failed")
                 return HTTPStatus.INTERNAL_SERVER_ERROR, [
                     {"error": "tender data is unavailable"}
                 ]
@@ -567,6 +571,7 @@ class ScopedApi:
                 try:
                     record = self._main_reader.tender(tender_id, talukas)
                 except Exception:
+                    LOGGER.exception("PostgreSQL tender detail failed")
                     return HTTPStatus.INTERNAL_SERVER_ERROR, {
                         "error": "tender data is unavailable"
                     }
@@ -618,6 +623,7 @@ class ScopedApi:
                 try:
                     rows = self._main_reader.organisations(talukas)
                 except Exception:
+                    LOGGER.exception("PostgreSQL organisation lookup failed")
                     return HTTPStatus.INTERNAL_SERVER_ERROR, {
                         "error": "organisation data is unavailable"
                     }
