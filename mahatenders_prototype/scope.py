@@ -135,8 +135,6 @@ def classify_location(raw_location: Optional[str]) -> dict[str, Optional[str]]:
             continue
         match = re.search(r"\b%s\b" % re.escape(candidate), normalized)
         if match:
-            if re.search(r"\b%s\s+(?:district|dist)\b" % re.escape(candidate), normalized):
-                continue
             taluka_matches.append((match.start(), -len(candidate), owner, canonical, candidate))
     unique_talukas = {(owner, canonical) for _, _, owner, canonical, _ in taluka_matches}
     if len(unique_talukas) > 1:

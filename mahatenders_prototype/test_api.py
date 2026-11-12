@@ -285,6 +285,51 @@ class ScopedApiTests(unittest.TestCase):
         self.assertEqual(organisations["organisations"][0]["tender_count"], 2)
         self.assertNotEqual(organisations["organisations"][0]["tender_count"], 999)
 
+    def test_postgres_read_api_filters_and_aggregates_scope_records(self):
+        record = {
+            "tender_id": "POSTGRES_1",
+            "location_raw": "Arvi, Wardha District",
+            "scope_district": "Wardha",
+            "scope_taluka": "Arvi",
+            "scope_status": "IN_SCOPE",
+        }
+        organisation = {
+            "name": "Public Works Department",
+            "tender_id": "POSTGRES_1",
+            "source_url": "https://example.test/organisations",
+            "count_url": "https://example.test/count",
+            "observed_at": "2026-11-12",
+            "location_raw": record["location_raw"],
+            "scope_district": "Wardha",
+            "scope_taluka": "Arvi",
+        }
+
+        class FakePostgresReader:
+            def tenders(self, *args):
+                return [record]
+
+            def organisations(self, *args):
+                return [organisation]
+
+        self.api.storage_mode = "postgres"
+        self.api._main_reader = FakePostgresReader()
+        status, tenders = self.api.response(
+            "/api/v1/tenders", {"district": ["Wardha"], "taluka": ["Arvi"]}
+        )
+        self.assertEqual(status, 200)
+        self.assertEqual(tenders["count"], 1)
+        status, organisations = self.api.response("/api/v1/organisations", {})
+        self.assertEqual(status, 200)
+        self.assertEqual(organisations["count"], 1)
+        status, stats = self.api.response("/api/v1/stats", {})
+        self.assertEqual(status, 200)
+        self.assertEqual(stats["districts"], [{"district": "Wardha", "tender_count": 1}])
+        self.assertEqual(stats["talukas"], [{
+            "district": "Wardha",
+            "taluka": "Arvi",
+            "tender_count": 1,
+        }])
+
     def test_scoped_api_opens_database_read_only(self):
         connection = self.api.connection()
         with self.assertRaises(Exception):

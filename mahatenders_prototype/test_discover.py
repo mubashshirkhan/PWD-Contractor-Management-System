@@ -708,6 +708,43 @@ class ParserTests(unittest.TestCase):
                 ("IN_SCOPE", *scope),
             )
 
+    def test_talukas_followed_by_district_markers_classify_in_scope(self):
+        expected = {
+            "AT.-ROHNA TALUKA.-ARVI DISTRICT- WARDHA": ("Wardha", "Arvi"),
+            "At Bhapki Ta Warud Dist Amravati": ("Amravati", "Warud"),
+            "CHICHPUR, TQ. MORSHI DIST. AMRAVATI": ("Amravati", "Morshi"),
+        }
+        for location, scope in expected.items():
+            result = classify_location(location)
+            self.assertEqual(
+                (result["scope_status"], result["scope_district"], result["scope_taluka"]),
+                ("IN_SCOPE", *scope),
+            )
+
+    def test_all_configured_talukas_with_district_markers_classify_in_scope(self):
+        for district, talukas in DISTRICT_TALUKAS.items():
+            for taluka in talukas:
+                result = classify_location(
+                    "%s Taluka Dist %s" % (taluka, district)
+                )
+                expected_taluka = None if taluka == district else taluka
+                self.assertEqual(
+                    (result["scope_status"], result["scope_district"], result["scope_taluka"]),
+                    ("IN_SCOPE", district, expected_taluka),
+                )
+
+    def test_district_only_and_missing_locations_remain_distinct(self):
+        district_only = classify_location("Wardha District")
+        missing = classify_location("")
+        self.assertEqual(
+            (district_only["scope_status"], district_only["scope_district"], district_only["scope_taluka"]),
+            ("IN_SCOPE", "Wardha", None),
+        )
+        self.assertEqual(
+            (missing["scope_status"], missing["scope_district"], missing["scope_taluka"]),
+            ("UNKNOWN", None, None),
+        )
+
     def test_conflicting_location_evidence_remains_unknown(self):
         result = classify_location("ARVI, Amravati district")
         self.assertEqual(result["scope_status"], "UNKNOWN")
