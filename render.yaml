@@ -2,6 +2,7 @@ services:
   - type: web
     name: mahatenders-backend
     runtime: python
+    plan: free
     rootDir: mahatenders_prototype
     buildCommand: pip install -r requirements.txt
     startCommand: python api.py
