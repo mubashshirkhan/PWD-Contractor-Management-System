@@ -467,7 +467,7 @@ class _ReadRepository:
         return records[0] if records else None
 
     def organisations(self, talukas: list[str]) -> list[dict[str, object]]:
-        clauses, values = self._scope_sql(talukas, alias="t")
+        clauses, values = self._scope_sql(talukas, None, None, alias="t")
         statement = """
             SELECT o.name, t.tender_id, o.source_url, o.count_url,
                    o.observed_at, t.location_raw, t.scope_district,

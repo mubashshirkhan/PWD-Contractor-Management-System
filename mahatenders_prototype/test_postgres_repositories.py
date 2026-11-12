@@ -5,15 +5,21 @@ from discover import ListingPage, Organisation, Tender
 from postgres_repositories import (
     LocationExtractionRepository,
     MainExtractionRepository,
+    MainReadRepository,
 )
+from scope import DISTRICT_TALUKAS
 
 
 class FakeCursor:
-    def __init__(self, row=None):
+    def __init__(self, row=None, rows=None):
         self.row = row
+        self.rows = rows or []
 
     def fetchone(self):
         return self.row
+
+    def fetchall(self):
+        return self.rows
 
 
 class FakeConnection:
@@ -28,6 +34,25 @@ class FakeConnection:
         if "RETURNING id" in statement:
             return FakeCursor({"id": 41})
         return FakeCursor()
+
+
+class ReadFakeConnection(FakeConnection):
+    def execute(self, statement, params=()):
+        self.statements.append((statement, params))
+        return FakeCursor(
+            rows=[
+                {
+                    "name": "Public Works Department",
+                    "tender_id": "TENDER-1",
+                    "source_url": "https://example.test/organisations",
+                    "count_url": "https://example.test/count",
+                    "observed_at": "2026-11-12",
+                    "location_raw": "Arvi",
+                    "scope_district": "Wardha",
+                    "scope_taluka": "Arvi",
+                }
+            ]
+        )
 
 
 class FakeHandle:
@@ -210,6 +235,23 @@ class PostgreSQLRepositoryTests(unittest.TestCase):
                 self.assertEqual(handle.commit_count, 0)
                 self.assertEqual(handle.rollback_count, 1)
                 self.assertNotIn("postgresql://", str(raised.exception))
+
+    def test_organisations_uses_full_scope_filter(self):
+        handle = FakeHandle("main", ReadFakeConnection())
+        talukas = [
+            taluka
+            for district_talukas in DISTRICT_TALUKAS.values()
+            for taluka in district_talukas
+        ]
+
+        rows = MainReadRepository(handle).organisations(talukas)
+
+        self.assertEqual(rows[0]["tender_id"], "TENDER-1")
+        statement, params = handle.connection.statements[0]
+        self.assertIn("t.scope_district IN (%s, %s)", statement)
+        self.assertIn("t.scope_taluka IN (", statement)
+        self.assertEqual(params[:2], ["Wardha", "Amravati"])
+        self.assertEqual(params[2:], talukas)
 
 
 if __name__ == "__main__":
