@@ -1,0 +1,43 @@
+{
+  "run_id": 48,
+  "mode": "location",
+  "status": "COMPLETED",
+  "limits": {
+    "talukas": 1,
+    "max_pages_per_taluka": null,
+    "request_delay_seconds": 1.0
+  },
+  "talukas_searched": [
+    "Arvi"
+  ],
+  "search_requests": 1,
+  "listing_pages_processed": 1,
+  "tender_ids_discovered": 12,
+  "unique_tender_ids_discovered": 12,
+  "tender_details_attempted": 12,
+  "unique_tenders_retrieved": 12,
+  "tender_details_retrieved": 12,
+  "tender_details_failed": 0,
+  "in_scope_tenders_retrieved": 1,
+  "unknown_location_tenders_excluded": 10,
+  "out_of_scope_tenders_excluded": 1,
+  "duplicate_tenders_prevented": 0,
+  "errors": [],
+  "taluka_results": [
+    {
+      "taluka": "Arvi",
+      "district": "Wardha",
+      "search_requests": 1,
+      "pages_processed": 1,
+      "tender_ids_discovered": 12,
+      "details_attempted": 12,
+      "details_succeeded": 12,
+      "details_failed": 0,
+      "status": "COMPLETED",
+      "errors": [],
+      "finished_at": "2026-11-12T11:20:16.017665+00:00"
+    }
+  ],
+  "finished_at": "2026-11-12T11:20:16.017671+00:00",
+  "processing_seconds": 21.898
+}

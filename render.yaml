@@ -1,0 +1,20 @@
+services:
+  - type: web
+    name: mahatenders-backend
+    runtime: python
+    rootDir: mahatenders_prototype
+    buildCommand: pip install -r requirements.txt
+    startCommand: python api.py
+    envVars:
+      - key: MAHATENDERS_STORAGE
+        value: postgres
+      - key: DATABASE_URL
+        sync: false
+      - key: MAHATENDERS_CORS_ORIGIN
+        sync: false
+      - key: MAHATENDERS_DATABASE
+        value: data/mahatenders.sqlite3
+      - key: MAHATENDERS_LOCATION_DATABASE
+        value: data/location_ui_test.sqlite3
+      - key: MAHATENDERS_LOCATION_JSON
+        value: data/location_ui_test.json

@@ -1,0 +1,28 @@
+{
+  "status": "BLOCKED",
+  "mode": "location",
+  "district": "Wardha",
+  "taluka": "Arvi",
+  "human_captcha": true,
+  "max_pages_per_taluka": 2,
+  "max_details": 5,
+  "listing_pages_processed": 0,
+  "tender_ids_discovered": 0,
+  "tender_details_retrieved": 0,
+  "classification_results": {},
+  "errors": [
+    {
+      "stage": "captcha_input",
+      "message": "Human CAPTCHA input was unavailable in the non-interactive test process (EOF)."
+    }
+  ],
+  "portal_responses": [
+    200,
+    200
+  ],
+  "notes": [
+    "Homepage and location form loaded; CAPTCHA image resolved through the existing session.",
+    "No CAPTCHA was solved or bypassed.",
+    "No historical database was used."
+  ]
+}
