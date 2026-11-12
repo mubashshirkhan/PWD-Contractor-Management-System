@@ -479,7 +479,28 @@ class _ReadRepository:
             ORDER BY o.name, t.tender_id
         """ % (self.handle.schema, self.handle.schema, clauses)
         with self.handle.transaction(read_only=True) as connection:
-            return [dict(row) for row in connection.execute(statement, values).fetchall()]
+            rows = [
+                dict(row)
+                for row in connection.execute(statement, values).fetchall()
+            ]
+            if rows:
+                return rows
+            fallback_statement = r"""
+                SELECT regexp_replace(t.organisation_chain, '^.*\|\|', '') AS name,
+                       t.tender_id, t.source_detail_url AS source_url,
+                       t.source_listing_url AS count_url, t.observed_at,
+                       t.location_raw, t.location_city_village,
+                       t.location_taluka, t.location_district,
+                       t.scope_district, t.scope_taluka
+                FROM %s.tenders AS t
+                WHERE %s
+                  AND COALESCE(t.organisation_chain, '') <> ''
+                ORDER BY name, t.tender_id
+            """ % (self.handle.schema, clauses)
+            return [
+                dict(row)
+                for row in connection.execute(fallback_statement, values).fetchall()
+            ]
 
     def detail_fields(self, tender_id: str) -> dict[str, object]:
         statement = """

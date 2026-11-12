@@ -493,7 +493,8 @@ class ScopedApi:
                     {"error": "tender data is unavailable"}
                 ]
             return HTTPStatus.OK, [
-                record for record in records
+                self._safe_tender_record(record)
+                for record in records
                 if self._raw_location_is_strictly_in_scope(record)
             ]
         scope_clause, values = self.scope_predicate()
@@ -531,18 +532,38 @@ class ScopedApi:
         with closing(self.connection()) as connection:
             records = [dict(row) for row in connection.execute(statement, values)]
         return HTTPStatus.OK, [
-            record for record in records
+            self._safe_tender_record(record)
+            for record in records
             if self._raw_location_is_strictly_in_scope(record)
         ]
 
     @staticmethod
     def _raw_location_is_strictly_in_scope(record: dict[str, object]) -> bool:
-        classified = classify_location(record.get("location_raw"))
+        evidence = ", ".join(
+            str(record[field])
+            for field in (
+                "location_raw",
+                "location_city_village",
+                "location_taluka",
+                "location_district",
+            )
+            if record.get(field)
+        )
+        classified = classify_location(evidence or None)
         return (
             classified["scope_status"] == "IN_SCOPE"
             and classified["scope_district"] == record["scope_district"]
             and classified["scope_taluka"] == record["scope_taluka"]
         )
+
+    @staticmethod
+    def _safe_tender_record(record: dict[str, object]) -> dict[str, object]:
+        safe_record = dict(record)
+        for field in ("source_listing_url", "source_detail_url"):
+            value = safe_record.get(field)
+            if value:
+                safe_record[field] = safe_url_for_log(str(value))
+        return safe_record
 
     def response(self, path: str, query: dict[str, list[str]]) -> tuple[int, object]:
         if path.startswith("/api/v1/location-search/runs/") and path.endswith("/tenders"):
@@ -576,7 +597,7 @@ class ScopedApi:
                         "error": "tender data is unavailable"
                     }
                 if record and self._raw_location_is_strictly_in_scope(record):
-                    return HTTPStatus.OK, record
+                    return HTTPStatus.OK, self._safe_tender_record(record)
                 return HTTPStatus.NOT_FOUND, {"error": "in-scope tender not found"}
             scope_clause, values = self.scope_predicate()
             with closing(self.connection()) as connection:
@@ -591,7 +612,7 @@ class ScopedApi:
                     values + [tender_id],
                 )]
             if records and self._raw_location_is_strictly_in_scope(records[0]):
-                return HTTPStatus.OK, records[0]
+                return HTTPStatus.OK, self._safe_tender_record(records[0])
             return HTTPStatus.NOT_FOUND, {"error": "in-scope tender not found"}
         if path == "/api/v1/stats":
             status, records = self.tenders({})
@@ -638,8 +659,16 @@ class ScopedApi:
                         {
                             "name": row["name"],
                             "tender_count": 0,
-                            "source_url": row["source_url"],
-                            "count_url": row["count_url"],
+                            "source_url": (
+                                safe_url_for_log(row["source_url"])
+                                if row["source_url"]
+                                else None
+                            ),
+                            "count_url": (
+                                safe_url_for_log(row["count_url"])
+                                if row["count_url"]
+                                else None
+                            ),
                             "observed_at": row["observed_at"],
                         },
                     )
@@ -668,8 +697,16 @@ class ScopedApi:
                     {
                         "name": record["name"],
                         "tender_count": 0,
-                        "source_url": record["source_url"],
-                        "count_url": record["count_url"],
+                        "source_url": (
+                            safe_url_for_log(record["source_url"])
+                            if record["source_url"]
+                            else None
+                        ),
+                        "count_url": (
+                            safe_url_for_log(record["count_url"])
+                            if record["count_url"]
+                            else None
+                        ),
                         "observed_at": record["observed_at"],
                     },
                 )

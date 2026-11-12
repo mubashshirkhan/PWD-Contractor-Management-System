@@ -55,6 +55,30 @@ class ReadFakeConnection(FakeConnection):
         )
 
 
+class EmptyThenFallbackConnection(ReadFakeConnection):
+    def execute(self, statement, params=()):
+        self.statements.append((statement, params))
+        if "regexp_replace" in statement:
+            return FakeCursor(
+                rows=[
+                    {
+                        "name": "Municipal Council, Arvi",
+                        "tender_id": "TENDER-2",
+                        "source_url": "https://example.test/detail",
+                        "count_url": "https://example.test/list",
+                        "observed_at": "2026-11-12",
+                        "location_raw": "Arvi",
+                        "location_city_village": "Arvi",
+                        "location_taluka": "Arvi",
+                        "location_district": "Wardha",
+                        "scope_district": "Wardha",
+                        "scope_taluka": "Arvi",
+                    }
+                ]
+            )
+        return FakeCursor()
+
+
 class FakeHandle:
     def __init__(self, schema, connection=None):
         self.schema = schema
@@ -253,6 +277,21 @@ class PostgreSQLRepositoryTests(unittest.TestCase):
         self.assertIn("LIKE '%%' || o.name || '%%'", statement)
         self.assertEqual(params[:2], ["Wardha", "Amravati"])
         self.assertEqual(params[2:], talukas)
+
+    def test_organisations_falls_back_to_tender_chain_when_directory_has_no_match(self):
+        handle = FakeHandle("main", EmptyThenFallbackConnection())
+        talukas = [
+            taluka
+            for district_talukas in DISTRICT_TALUKAS.values()
+            for taluka in district_talukas
+        ]
+
+        rows = MainReadRepository(handle).organisations(talukas)
+
+        self.assertEqual(rows[0]["name"], "Municipal Council, Arvi")
+        self.assertEqual(len(handle.connection.statements), 2)
+        self.assertIn("regexp_replace", handle.connection.statements[1][0])
+        self.assertEqual(handle.connection.statements[1][1], handle.connection.statements[0][1])
 
 
 if __name__ == "__main__":

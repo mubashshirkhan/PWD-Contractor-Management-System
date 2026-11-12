@@ -289,15 +289,20 @@ class ScopedApiTests(unittest.TestCase):
         record = {
             "tender_id": "POSTGRES_1",
             "location_raw": "Arvi, Wardha District",
+            "location_city_village": None,
+            "location_taluka": None,
+            "location_district": None,
             "scope_district": "Wardha",
             "scope_taluka": "Arvi",
             "scope_status": "IN_SCOPE",
+            "source_listing_url": "https://example.test/list?session=secret",
+            "source_detail_url": "https://example.test/detail?sp=secret&safe=1",
         }
         organisation = {
             "name": "Public Works Department",
             "tender_id": "POSTGRES_1",
-            "source_url": "https://example.test/organisations",
-            "count_url": "https://example.test/count",
+            "source_url": "https://example.test/organisations?session=secret&safe=1",
+            "count_url": "https://example.test/count?sp=secret",
             "observed_at": "2026-11-12",
             "location_raw": record["location_raw"],
             "scope_district": "Wardha",
@@ -318,9 +323,13 @@ class ScopedApiTests(unittest.TestCase):
         )
         self.assertEqual(status, 200)
         self.assertEqual(tenders["count"], 1)
+        self.assertNotIn("session", tenders["tenders"][0]["source_listing_url"])
+        self.assertNotIn("sp=", tenders["tenders"][0]["source_detail_url"])
         status, organisations = self.api.response("/api/v1/organisations", {})
         self.assertEqual(status, 200)
         self.assertEqual(organisations["count"], 1)
+        self.assertNotIn("session", organisations["organisations"][0]["source_url"])
+        self.assertNotIn("sp=", organisations["organisations"][0]["count_url"])
         status, stats = self.api.response("/api/v1/stats", {})
         self.assertEqual(status, 200)
         self.assertEqual(stats["districts"], [{"district": "Wardha", "tender_count": 1}])
@@ -329,6 +338,31 @@ class ScopedApiTests(unittest.TestCase):
             "taluka": "Arvi",
             "tender_count": 1,
         }])
+
+    def test_postgres_read_api_uses_all_location_evidence_fields(self):
+        record = {
+            "tender_id": "POSTGRES_FIELDS_1",
+            "location_raw": "Project location",
+            "location_city_village": "Bhapki",
+            "location_taluka": "Warud",
+            "location_district": "Amravati",
+            "scope_district": "Amravati",
+            "scope_taluka": "Warud",
+            "scope_status": "IN_SCOPE",
+        }
+
+        class FakePostgresReader:
+            def tenders(self, *args):
+                return [record]
+
+            def organisations(self, *args):
+                return []
+
+        self.api.storage_mode = "postgres"
+        self.api._main_reader = FakePostgresReader()
+        status, tenders = self.api.response("/api/v1/tenders", {})
+        self.assertEqual(status, 200)
+        self.assertEqual(tenders["count"], 1)
 
     def test_scoped_api_opens_database_read_only(self):
         connection = self.api.connection()
