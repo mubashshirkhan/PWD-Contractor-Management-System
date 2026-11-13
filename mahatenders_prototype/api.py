@@ -312,6 +312,24 @@ class ScopedApi:
                 fields.update(parsed)
         return fields
 
+    @staticmethod
+    def _detail_sections(connection: sqlite3.Connection, tender_id: str) -> dict[str, object]:
+        sections: dict[str, object] = {}
+        row = connection.execute(
+            """SELECT raw_value
+               FROM source_evidence
+               WHERE tender_id=? AND field_name='__detail_sections_json__'
+               ORDER BY id DESC LIMIT 1""",
+            (tender_id,),
+        ).fetchone()
+        if not row:
+            return sections
+        try:
+            parsed = json.loads(row["raw_value"])
+        except (TypeError, ValueError):
+            return sections
+        return parsed if isinstance(parsed, dict) else sections
+
     def location_search_details(self, run_id_value: str) -> tuple[int, object]:
         try:
             run_id = int(run_id_value)
@@ -364,6 +382,11 @@ class ScopedApi:
                         "title": row["title"],
                         "organisation": row["organisation_chain"],
                         "reference_number": row["reference_number"],
+                        "published_at": row["published_at"],
+                        "closing_at": row["closing_at"],
+                        "estimated_value": row["estimated_value"],
+                        "source_listing_url": row["source_listing_url"],
+                        "source_detail_url": row["source_detail_url"],
                         "district": row["scope_district"],
                         "taluka": row["scope_taluka"],
                         "scope_classification": {
@@ -373,6 +396,7 @@ class ScopedApi:
                             "provenance": row["scope_provenance"],
                         },
                         "detail_fields": self._detail_fields(connection, row["tender_id"]),
+                        "detail_sections": self._detail_sections(connection, row["tender_id"]),
                         "source": {
                             "url": safe_url_for_log(row["source_detail_url"]),
                             "extracted_at": row["observed_at"],
@@ -417,6 +441,11 @@ class ScopedApi:
                 "title": row["title"],
                 "organisation": row["organisation_chain"],
                 "reference_number": row["reference_number"],
+                "published_at": row["published_at"],
+                "closing_at": row["closing_at"],
+                "estimated_value": row["estimated_value"],
+                "source_listing_url": row["source_listing_url"],
+                "source_detail_url": row["source_detail_url"],
                 "district": row["scope_district"],
                 "taluka": row["scope_taluka"],
                 "scope_classification": {
@@ -426,6 +455,7 @@ class ScopedApi:
                     "provenance": row["scope_provenance"],
                 },
                 "detail_fields": detail_fields.get(row["tender_id"], {}),
+                "detail_sections": {},
                 "source": {
                     "url": safe_url_for_log(row["source_detail_url"]),
                     "extracted_at": row["observed_at"],
@@ -447,46 +477,85 @@ class ScopedApi:
         }
 
     @staticmethod
-    def scope_predicate() -> tuple[str, list[object]]:
+    def scope_predicate(classification: str = "ALL") -> tuple[str, list[object]]:
         talukas = [taluka for values in DISTRICT_TALUKAS.values() for taluka in values]
-        placeholders = ",".join("?" for _ in talukas)
+        if classification == "IN_SCOPE":
+            return (
+                "scope_status = 'IN_SCOPE' AND scope_district IN (?, ?)",
+                ["Wardha", "Amravati"],
+            )
+        if classification == "UNKNOWN":
+            return "scope_status = 'UNKNOWN'", []
+        if classification == "OUT_OF_SCOPE":
+            return "scope_status = 'OUT_OF_SCOPE'", []
         return (
-            "scope_status = 'IN_SCOPE' AND scope_district IN (?, ?) "
-            "AND scope_taluka IN (" + placeholders + ")",
-            ["Wardha", "Amravati", *talukas],
+            "(scope_status = 'UNKNOWN' OR "
+            "(scope_status = 'IN_SCOPE' AND scope_district IN (?, ?)))",
+            ["Wardha", "Amravati"],
         )
 
     @staticmethod
-    def validate_filters(query: dict[str, list[str]]) -> tuple[Optional[str], Optional[str], Optional[str]]:
+    def validate_filters(
+        query: dict[str, list[str]],
+    ) -> tuple[Optional[str], Optional[str], str, Optional[str]]:
         district_value = query.get("district", [])
         taluka_value = query.get("taluka", [])
-        if len(district_value) > 1 or len(taluka_value) > 1:
-            return None, None, "district and taluka may each be specified once"
+        classification_value = query.get("classification", [])
+        if len(district_value) > 1 or len(taluka_value) > 1 or len(classification_value) > 1:
+            return None, None, "ALL", "filters may each be specified once"
+        classification = classification_value[0].upper() if classification_value else "ALL"
+        if classification not in {"ALL", "IN_SCOPE", "UNKNOWN", "OUT_OF_SCOPE"}:
+            return None, None, "ALL", "invalid classification; use ALL, IN_SCOPE, UNKNOWN, or OUT_OF_SCOPE"
         district = canonical_district(district_value[0]) if district_value else None
         if district_value and not district:
-            return None, None, "invalid district; only Wardha and Amravati are allowed"
+            return None, None, classification, "invalid district; only Wardha and Amravati are allowed"
         taluka = canonical_taluka(taluka_value[0]) if taluka_value else None
         if taluka_value and not taluka:
-            return None, None, "invalid taluka; use one of the 22 configured talukas"
+            return None, None, classification, "invalid taluka; use one of the 22 configured talukas"
         if district and taluka and district_for_taluka(taluka) != district:
-            return None, None, "district and taluka do not belong together"
-        return district, taluka, None
+            return None, None, classification, "district and taluka do not belong together"
+        return district, taluka, classification, None
 
     def tenders(self, query: dict[str, list[str]]) -> tuple[int, list[dict[str, object]]]:
-        district, taluka, error = self.validate_filters(query)
+        district, taluka, classification, error = self.validate_filters(query)
         if error:
             return HTTPStatus.BAD_REQUEST, [{"error": error}]
+        location_search = query.get("location_search", [""])[0] == "1"
         if self.storage_mode == "postgres":
             talukas = [taluka for values in DISTRICT_TALUKAS.values() for taluka in values]
             try:
-                records = self._main_reader.tenders(
-                    talukas,
-                    district,
-                    taluka,
-                    query.get("q", [None])[0],
-                    query.get("closing_before", [None])[0],
-                    query.get("closing_after", [None])[0],
-                )
+                search = query.get("q", [None])[0]
+                closing_before = query.get("closing_before", [None])[0]
+                closing_after = query.get("closing_after", [None])[0]
+                if location_search:
+                    records = []
+                    for reader in (self._location_reader, self._main_reader):
+                        if reader is not None:
+                            records.extend(reader.tenders(
+                                talukas,
+                                None,
+                                None,
+                                search,
+                                closing_before,
+                                closing_after,
+                                "ALL",
+                                include_all=True,
+                            ))
+                    records = self._merge_tender_records(records)
+                    records = [
+                        record for record in records
+                        if self._location_record_matches(record, district, taluka)
+                    ]
+                else:
+                    records = self._main_reader.tenders(
+                        talukas,
+                        district,
+                        taluka,
+                        search,
+                        closing_before,
+                        closing_after,
+                        classification,
+                    )
             except Exception:
                 LOGGER.exception("PostgreSQL tender listing failed")
                 return HTTPStatus.INTERNAL_SERVER_ERROR, [
@@ -495,15 +564,17 @@ class ScopedApi:
             return HTTPStatus.OK, [
                 self._safe_tender_record(record)
                 for record in records
-                if self._raw_location_is_strictly_in_scope(record)
+                if location_search or self._raw_location_matches_classification(record, classification)
             ]
-        scope_clause, values = self.scope_predicate()
+        scope_clause, values = self.scope_predicate(classification)
         search = query.get("q", [None])[0]
-        clauses = [scope_clause]
-        if district:
+        if location_search:
+            values = []
+        clauses = ["1=1" if location_search else scope_clause]
+        if district and not location_search:
             clauses.append("scope_district = ?")
             values.append(district)
-        if taluka:
+        if taluka and not location_search:
             clauses.append("scope_taluka = ?")
             values.append(taluka)
         if search:
@@ -531,14 +602,76 @@ class ScopedApi:
         )
         with closing(self.connection()) as connection:
             records = [dict(row) for row in connection.execute(statement, values)]
+        if location_search and self.location_database.exists():
+            try:
+                with closing(self.location_connection()) as connection:
+                    records.extend(dict(row) for row in connection.execute(statement, values))
+            except sqlite3.Error:
+                LOGGER.exception("SQLite location tender listing failed")
+        records = self._merge_tender_records(records)
         return HTTPStatus.OK, [
             self._safe_tender_record(record)
             for record in records
-            if self._raw_location_is_strictly_in_scope(record)
+            if (
+                self._location_record_matches(record, district, taluka)
+                if location_search
+                else self._raw_location_matches_classification(record, classification)
+            )
         ]
 
     @staticmethod
-    def _raw_location_is_strictly_in_scope(record: dict[str, object]) -> bool:
+    def _merge_tender_records(records: list[dict[str, object]]) -> list[dict[str, object]]:
+        merged: dict[str, dict[str, object]] = {}
+        for record in records:
+            tender_id = str(record.get("tender_id") or "")
+            if not tender_id:
+                continue
+            existing = merged.setdefault(tender_id, {})
+            for key, value in record.items():
+                if existing.get(key) in (None, "") and value not in (None, ""):
+                    existing[key] = value
+                elif key not in existing:
+                    existing[key] = value
+        return list(merged.values())
+
+    @staticmethod
+    def _location_record_matches(
+        record: dict[str, object],
+        district: Optional[str],
+        taluka: Optional[str],
+    ) -> bool:
+        record_district = record.get("scope_district")
+        record_taluka = record.get("scope_taluka")
+        if not record_district or not record_taluka:
+            evidence = ", ".join(
+                str(record[field])
+                for field in (
+                    "location_raw",
+                    "location_city_village",
+                    "location_taluka",
+                    "location_district",
+                    "organisation_chain",
+                )
+                if record.get(field)
+            )
+            classified = classify_location(evidence or None)
+            record_district = record_district or classified["scope_district"]
+            record_taluka = record_taluka or classified["scope_taluka"]
+        if district and record_district != district:
+            return False
+        return not taluka or record_taluka == taluka
+
+    @staticmethod
+    def _raw_location_matches_classification(
+        record: dict[str, object],
+        classification: str = "IN_SCOPE",
+    ) -> bool:
+        if classification in {"UNKNOWN", "OUT_OF_SCOPE"}:
+            return record.get("scope_status") == classification
+        if (
+            classification == "ALL" and record.get("scope_status") == "UNKNOWN"
+        ):
+            return record.get("scope_status") == "UNKNOWN"
         evidence = ", ".join(
             str(record[field])
             for field in (
@@ -555,6 +688,10 @@ class ScopedApi:
             and classified["scope_district"] == record["scope_district"]
             and classified["scope_taluka"] == record["scope_taluka"]
         )
+
+    @staticmethod
+    def _raw_location_is_strictly_in_scope(record: dict[str, object]) -> bool:
+        return ScopedApi._raw_location_matches_classification(record, "IN_SCOPE")
 
     @staticmethod
     def _safe_tender_record(record: dict[str, object]) -> dict[str, object]:
@@ -580,9 +717,20 @@ class ScopedApi:
             status, records = self.tenders(query)
             if status != HTTPStatus.OK:
                 return status, records[0]
-            return status, {"count": len(records), "tenders": records}
+            counts = {
+                classification: sum(
+                    1 for record in records if record["scope_status"] == classification
+                )
+                for classification in ("IN_SCOPE", "UNKNOWN")
+            }
+            return status, {
+                "count": len(records),
+                "classification_counts": counts,
+                "tenders": records,
+            }
         if path.startswith("/api/v1/tenders/"):
             tender_id = unquote(path.rsplit("/", 1)[-1])
+            location_search = query.get("location_search", [""])[0] == "1"
             if self.storage_mode == "postgres":
                 talukas = [
                     taluka
@@ -590,16 +738,38 @@ class ScopedApi:
                     for taluka in values
                 ]
                 try:
-                    record = self._main_reader.tender(tender_id, talukas)
+                    classification_value = query.get("classification", ["IN_SCOPE"])[0].upper()
+                    if location_search:
+                        record = None
+                        for reader in (self._location_reader, self._main_reader):
+                            if reader is not None:
+                                record = reader.tender(
+                                    tender_id,
+                                    talukas,
+                                    "ALL",
+                                    include_all=True,
+                                )
+                                if record:
+                                    break
+                    else:
+                        record = self._main_reader.tender(
+                            tender_id,
+                            talukas,
+                            classification_value,
+                        )
                 except Exception:
                     LOGGER.exception("PostgreSQL tender detail failed")
                     return HTTPStatus.INTERNAL_SERVER_ERROR, {
                         "error": "tender data is unavailable"
                     }
-                if record and self._raw_location_is_strictly_in_scope(record):
+                if record and (location_search or self._raw_location_matches_classification(record, classification_value)):
                     return HTTPStatus.OK, self._safe_tender_record(record)
-                return HTTPStatus.NOT_FOUND, {"error": "in-scope tender not found"}
-            scope_clause, values = self.scope_predicate()
+                return HTTPStatus.NOT_FOUND, {"error": "tender not found"}
+            classification_value = query.get("classification", ["IN_SCOPE"])[0].upper()
+            scope_clause, values = self.scope_predicate(classification_value)
+            if location_search:
+                scope_clause = "1=1"
+                values = []
             with closing(self.connection()) as connection:
                 records = [dict(row) for row in connection.execute(
                     "SELECT tender_id, reference_number, title, organisation_chain, "
@@ -611,22 +781,53 @@ class ScopedApi:
                     + " AND tender_id = ?",
                     values + [tender_id],
                 )]
-            if records and self._raw_location_is_strictly_in_scope(records[0]):
-                return HTTPStatus.OK, self._safe_tender_record(records[0])
-            return HTTPStatus.NOT_FOUND, {"error": "in-scope tender not found"}
+            if location_search and not records and self.location_database.exists():
+                try:
+                    with closing(self.location_connection()) as connection:
+                        records = [dict(row) for row in connection.execute(
+                            "SELECT tender_id, reference_number, title, organisation_chain, "
+                            "published_at, closing_at, opening_at, estimated_value, product_category, "
+                            "location_raw, location_city_village, location_taluka, location_district, "
+                            "location_state, location_provenance, location_confidence, scope_status, "
+                            "scope_district, scope_taluka, scope_provenance, source_listing_url, "
+                            "source_detail_url, observed_at FROM tenders WHERE 1=1 AND tender_id = ?",
+                            (tender_id,),
+                        )]
+                except sqlite3.Error:
+                    LOGGER.exception("SQLite location tender detail failed")
+            if records and (location_search or self._raw_location_matches_classification(records[0], classification_value)):
+                record = records[0]
+                if location_search and self.location_database.exists():
+                    try:
+                        with closing(self.location_connection()) as connection:
+                            record["detail_fields"] = self._detail_fields(connection, tender_id)
+                            record["detail_sections"] = self._detail_sections(connection, tender_id)
+                    except sqlite3.Error:
+                        LOGGER.exception("SQLite tender detail evidence failed")
+                return HTTPStatus.OK, self._safe_tender_record(record)
+            return HTTPStatus.NOT_FOUND, {"error": "tender not found"}
         if path == "/api/v1/stats":
-            status, records = self.tenders({})
+            status, records = self.tenders(query)
             if status != HTTPStatus.OK:
                 return status, records[0]
             district_counts: dict[str, int] = {}
             taluka_counts: dict[tuple[str, str], int] = {}
+            classification_counts = {
+                classification: sum(
+                    1 for record in records if record["scope_status"] == classification
+                )
+                for classification in ("IN_SCOPE", "UNKNOWN")
+            }
             for record in records:
-                district = str(record["scope_district"])
-                taluka = str(record["scope_taluka"])
-                district_counts[district] = district_counts.get(district, 0) + 1
-                key = (district, taluka)
-                taluka_counts[key] = taluka_counts.get(key, 0) + 1
+                district = record["scope_district"]
+                taluka = record["scope_taluka"]
+                if district:
+                    district_counts[str(district)] = district_counts.get(str(district), 0) + 1
+                if district and taluka:
+                    key = (str(district), str(taluka))
+                    taluka_counts[key] = taluka_counts.get(key, 0) + 1
             return HTTPStatus.OK, {
+                "classification_counts": classification_counts,
                 "districts": [
                     {"district": district, "tender_count": count}
                     for district, count in sorted(district_counts.items())
@@ -675,7 +876,7 @@ class ScopedApi:
                     organisation["tender_count"] = int(organisation["tender_count"]) + 1
                 result = [organisations[name] for name in sorted(organisations)]
                 return HTTPStatus.OK, {"count": len(result), "organisations": result}
-            scope_clause, values = self.scope_predicate()
+            scope_clause, values = self.scope_predicate("IN_SCOPE")
             with closing(self.connection()) as connection:
                 rows = connection.execute(
                     """SELECT o.name, t.tender_id,

@@ -1,0 +1,209 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Tender intelligence and contractor operations workspace for Maharashtra PWD work.">
+  <title>WorkLedger | PWD Contractor Workspace</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <a class="brand" href="#home" aria-label="WorkLedger home">
+        <span class="brand-mark">WL</span>
+        <span><strong>WorkLedger</strong><small>PWD contractor workspace</small></span>
+      </a>
+      <div class="workspace-switcher">
+        <span class="eyebrow">Workspace</span>
+        <strong>Procurement desk</strong>
+        <small>Wardha + Amravati</small>
+      </div>
+      <nav aria-label="Workspace sections">
+        <a class="nav-link active" aria-current="page" href="#overview">Dashboard</a>
+        <a class="nav-link" href="#tenders">Tender discovery</a>
+        <a class="nav-link" href="#classification">Classification</a>
+        <a class="nav-link" href="#organisations">Organisation directory</a>
+        <a class="nav-link" href="#contractor">Contractor profile</a>
+        <a class="nav-link" href="#documents">Documents</a>
+        <a class="nav-link" href="#work-orders">Work orders</a>
+        <a class="nav-link" href="#projects">Project tracking</a>
+        <a class="nav-link" href="#payments">Payments &amp; expenses</a>
+        <a class="nav-link" href="#reports">Reports</a>
+        <a class="nav-link" href="#users">User management</a>
+      </nav>
+      <div class="sidebar-note">
+        <span class="eyebrow">Data boundary</span>
+        <p>Verified API records are separated from planned workspace modules. No business details are invented.</p>
+      </div>
+    </aside>
+
+    <main class="main-content">
+      <section id="home" class="public-hero">
+        <div>
+          <span class="hero-kicker">Maharashtra works intelligence</span>
+          <h1>Find the next PWD opportunity<br><em>with evidence you can trust</em></h1>
+          <p>One calm workspace for discovering local opportunities, qualifying tender evidence, and preparing the contractor record for delivery operations.</p>
+          <div class="hero-actions">
+            <a class="button button-primary" href="#tenders">Explore tenders <span aria-hidden="true">→</span></a>
+            <a class="button button-light" href="#contractor">View workspace plan</a>
+          </div>
+        </div>
+        <div class="hero-brief" aria-label="Current service boundary">
+          <div class="brief-topline"><span class="live-dot"></span> Production API configured</div>
+          <strong>Wardha · Amravati</strong>
+          <span>22 configured talukas</span>
+          <small>Location evidence remains the source of truth.</small>
+        </div>
+      </section>
+
+      <header class="page-header">
+        <div>
+          <p class="eyebrow">Private contractor dashboard</p>
+          <h2>Procurement overview</h2>
+          <p class="muted">Review verified tender opportunities first. Operational modules are staged for implementation.</p>
+        </div>
+        <button id="refreshAll" class="button button-primary" type="button">Refresh live data <span aria-hidden="true">↗</span></button>
+      </header>
+
+      <div id="notification" class="notification" role="status" aria-live="polite" hidden></div>
+
+      <section id="overview" class="section">
+        <div class="section-heading">
+          <div><p class="eyebrow">Dashboard</p><h2>Verified workspace pulse</h2></div>
+          <span id="districtStats" class="snapshot-label">Wardha and Amravati scope</span>
+        </div>
+        <div class="status-grid">
+          <article class="status-card status-card-accent">
+            <span class="card-label">Tender opportunities</span>
+            <strong id="tenderCount">—</strong>
+            <small>Current filtered result set</small>
+          </article>
+          <article class="status-card">
+            <span class="card-label">Organisations</span>
+            <strong id="organisationCount">—</strong>
+            <small>Associated with verified records</small>
+          </article>
+          <article class="status-card">
+            <span class="card-label">API status</span>
+            <strong id="pythonStatusText">Awaiting check</strong>
+            <small id="pythonStatusNote">Production API is configurable below</small>
+          </article>
+          <article class="status-card status-card-saffron">
+            <span class="card-label">Coverage</span>
+            <strong>22</strong>
+            <small>Wardha + Amravati talukas</small>
+          </article>
+        </div>
+        <div class="pulse-strip">
+          <span>Classification view</span>
+          <strong id="classificationStats">IN_SCOPE: — · UNKNOWN: —</strong>
+          <span class="pulse-note">OUT_OF_SCOPE records stay out of normal listings.</span>
+        </div>
+      </section>
+
+      <section id="tenders" class="section section-featured">
+        <div class="section-heading">
+          <div><p class="eyebrow">Tender discovery</p><h2>Opportunities in your geography</h2></div>
+          <span id="coverageLabel" class="coverage-warning">No records loaded</span>
+        </div>
+        <div class="filter-row">
+          <label>District <select id="districtFilter"><option value="">All configured districts</option><option>Wardha</option><option>Amravati</option></select></label>
+          <label>Taluka <select id="talukaFilter"><option value="">All talukas</option></select></label>
+          <label>Classification
+            <select id="classificationFilter">
+              <option value="ALL">All records</option>
+              <option value="IN_SCOPE">IN_SCOPE only</option>
+              <option value="UNKNOWN">UNKNOWN only</option>
+            </select>
+          </label>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Tender</th><th>Title</th><th>Organisation</th><th>Location</th><th>Closing</th><th>Value</th><th>Class</th><th></th></tr></thead>
+            <tbody id="tenderRows"></tbody>
+          </table>
+        </div>
+        <div id="tenderDetails" class="detail-panel" hidden></div>
+      </section>
+
+      <section id="classification" class="section">
+        <div class="section-heading"><div><p class="eyebrow">Tender classification</p><h2>Evidence before action</h2></div><span class="coverage-warning">No automatic promotion</span></div>
+        <div class="classification-grid">
+          <article class="classification-card"><span class="status-badge status-working">IN_SCOPE</span><h3>Ready for review</h3><p>Location evidence matches Wardha or Amravati and the configured geography.</p></article>
+          <article class="classification-card"><span class="status-badge status-not-tested">UNKNOWN</span><h3>Needs verification</h3><p>Displayed transparently without converting the record into an in-scope opportunity.</p></article>
+          <article class="classification-card"><span class="status-badge status-failed">OUT_OF_SCOPE</span><h3>Excluded from listing</h3><p>Retained in the source dataset but not shown in the normal tender workspace.</p></article>
+        </div>
+      </section>
+
+      <section id="locationDiscovery" class="section">
+        <div class="section-heading"><div><p class="eyebrow">Verified workflow</p><h2>Search MahaTenders by location</h2></div><span class="coverage-warning">Human CAPTCHA required</span></div>
+        <p class="muted">Choose a district and taluka to start a bounded, CAPTCHA-safe MahaTenders session.</p>
+        <div class="filter-row">
+          <label>District <select id="searchDistrict"><option value="">Select district</option><option value="Wardha">Wardha</option><option value="Amravati">Amravati</option></select></label>
+          <label>Taluka <select id="searchTaluka" disabled><option value="">Select taluka</option></select></label>
+        </div>
+        <div id="locationProgress" class="test-result" role="status" aria-live="polite">No location search started.</div>
+        <div id="captchaPanel" class="test-result" hidden>
+          <p><strong>CAPTCHA required</strong></p><img id="captchaImage" alt="MahaTenders CAPTCHA" class="captcha-image">
+          <label>CAPTCHA answer <input id="captchaAnswer" type="text" autocomplete="off"></label>
+          <button id="submitCaptcha" class="button button-secondary" type="button">Submit CAPTCHA</button>
+          <button id="cancelLocationSearch" class="button button-quiet" type="button">Cancel search</button>
+        </div>
+      </section>
+
+      <section id="organisations" class="section">
+        <div class="section-heading"><div><p class="eyebrow">Organisation directory</p><h2>Public authorities and buyers</h2></div><span class="coverage-warning">Verified API records</span></div>
+        <div class="table-wrap"><table><thead><tr><th>Organisation name</th><th>Tender count</th><th>Source</th><th>Status</th></tr></thead><tbody id="organisationRows"></tbody></table></div>
+      </section>
+
+      <section id="contractor" class="section">
+        <div class="section-heading"><div><p class="eyebrow">Contractor profile</p><h2>Your operating record</h2></div><span class="status-badge status-not-implemented">PLANNED</span></div>
+        <div class="module-panel"><div class="module-icon">CP</div><div><h3>Profile and eligibility workspace</h3><p>Registration details, PWD credentials, service areas, bank verification, and contact roles will live here. No contractor identity or business information is currently stored.</p></div></div>
+      </section>
+      <section id="documents" class="section">
+        <div class="section-heading"><div><p class="eyebrow">Document management</p><h2>Keep every submission ready</h2></div><span class="status-badge status-not-implemented">PLANNED</span></div>
+        <div class="module-panel"><div class="module-icon">DOC</div><div><h3>Secure document register</h3><p>Planned: expiry tracking for certificates, affidavits, technical schedules, and tender submission packs. File storage is not connected.</p></div></div>
+      </section>
+      <section id="work-orders" class="section">
+        <div class="section-heading"><div><p class="eyebrow">Work orders</p><h2>Turn awards into actions</h2></div><span class="status-badge status-not-implemented">PLANNED</span></div>
+        <div class="module-panel"><div class="module-icon">WO</div><div><h3>Order register</h3><p>Planned: award references, milestones, site instructions, and responsible team members. No work orders are represented as real data.</p></div></div>
+      </section>
+      <section id="projects" class="section">
+        <div class="section-heading"><div><p class="eyebrow">Project tracking</p><h2>Progress from site to completion</h2></div><span class="status-badge status-not-implemented">PLANNED</span></div>
+        <div class="module-panel"><div class="module-icon">PT</div><div><h3>Milestones and site progress</h3><p>Planned: project timelines, measurements, photos, variations, and completion evidence.</p></div></div>
+      </section>
+      <section id="payments" class="section">
+        <div class="section-heading"><div><p class="eyebrow">Payments &amp; expenses</p><h2>Know what is committed and paid</h2></div><span class="status-badge status-not-implemented">PLANNED</span></div>
+        <div class="module-panel"><div class="module-icon">₹</div><div><h3>Commercial controls</h3><p>Planned: bills, advances, retention, expenses, and payment status. No financial records are connected.</p></div></div>
+      </section>
+      <section id="reports" class="section">
+        <div class="section-heading"><div><p class="eyebrow">Reports</p><h2>Decision-ready summaries</h2></div><span class="status-badge status-not-implemented">PLANNED</span></div>
+        <div class="module-panel"><div class="module-icon">RPT</div><div><h3>Operational reporting</h3><p>Planned: tender pipeline, expiring documents, project status, receivables, and exportable summaries.</p></div></div>
+      </section>
+      <section id="users" class="section">
+        <div class="section-heading"><div><p class="eyebrow">User management</p><h2>Give each role the right view</h2></div><span class="status-badge status-not-implemented">PLANNED</span></div>
+        <div class="module-panel"><div class="module-icon">USR</div><div><h3>Roles and access</h3><p>Planned: owner, estimator, site manager, accounts, and read-only access. Authentication is not connected.</p></div></div>
+      </section>
+
+      <section id="tests" class="section connection-section">
+        <div class="section-heading"><div><p class="eyebrow">Connection settings</p><h2>API diagnostics</h2></div><span class="coverage-warning">Developer controls</span></div>
+        <div class="endpoint-row">
+          <label class="endpoint-control"><span>API Anything base URL</span><input id="apiBaseUrl" type="url" value="http://127.0.0.1:8787" aria-label="API Anything base URL"></label>
+          <label class="endpoint-control"><span>Production Python API</span><input id="pythonBaseUrl" type="url" value="https://mahatenders-backend.onrender.com" aria-label="Python scoped API base URL"></label>
+          <button class="button button-secondary" data-test="health" type="button">Check API Anything</button>
+          <button id="loadScopedData" class="button button-secondary" type="button">Load production data</button>
+        </div>
+        <div class="diagnostic-line"><span id="healthStatus" class="status-badge status-not-tested">NOT TESTED</span><span id="healthResult">API Anything health has not been checked.</span></div>
+        <span id="apiAnythingStatus" hidden>PARTIALLY WORKING</span><span id="apiAnythingValue" hidden></span><span id="apiAnythingMeta" hidden></span>
+      </section>
+
+      <section id="logs" class="section">
+        <div class="section-heading"><div><p class="eyebrow">Observability</p><h2>Session activity</h2></div><button id="clearLogs" class="button button-quiet" type="button">Clear activity</button></div>
+        <div id="logList" class="log-list" aria-live="polite"></div>
+      </section>
+    </main>
+  </div>
+  <script src="script.js"></script>
+</body>
+</html>

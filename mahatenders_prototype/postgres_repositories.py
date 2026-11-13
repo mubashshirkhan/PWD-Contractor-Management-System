@@ -385,16 +385,31 @@ class _ReadRepository:
         talukas: list[str],
         district: Optional[str],
         taluka: Optional[str],
+        classification: str = "IN_SCOPE",
         alias: str = "t",
     ) -> tuple[str, list[object]]:
+        if classification not in {"ALL", "IN_SCOPE", "UNKNOWN", "OUT_OF_SCOPE"}:
+            raise ValueError("classification must be ALL, IN_SCOPE, UNKNOWN, or OUT_OF_SCOPE")
+        clauses: list[str] = []
+        values: list[object] = []
         district_placeholders = ", ".join(["%s", "%s"])
-        taluka_placeholders = ", ".join(["%s"] * len(talukas))
-        clauses = [
-            "%s.scope_status = 'IN_SCOPE'" % alias,
-            "%s.scope_district IN (%s)" % (alias, district_placeholders),
-            "%s.scope_taluka IN (%s)" % (alias, taluka_placeholders),
-        ]
-        values: list[object] = ["Wardha", "Amravati", *talukas]
+        if classification == "UNKNOWN":
+            clauses.append("%s.scope_status = 'UNKNOWN'" % alias)
+        elif classification == "OUT_OF_SCOPE":
+            clauses.append("%s.scope_status = 'OUT_OF_SCOPE'" % alias)
+        else:
+            in_scope = "%s.scope_status = 'IN_SCOPE'" % alias
+            in_scope += " AND %s.scope_district IN (%s)" % (
+                alias,
+                district_placeholders,
+            )
+            values.extend(("Wardha", "Amravati"))
+            if classification == "IN_SCOPE":
+                clauses.append(in_scope)
+            else:
+                clauses.append(
+                    "(%s.scope_status = 'UNKNOWN' OR (%s))" % (alias, in_scope)
+                )
         if district:
             clauses.append("%s.scope_district = %%s" % alias)
             values.append(district)
@@ -412,8 +427,18 @@ class _ReadRepository:
         closing_before: Optional[str] = None,
         closing_after: Optional[str] = None,
         tender_id: Optional[str] = None,
+        classification: str = "ALL",
+        include_all: bool = False,
     ) -> list[dict[str, object]]:
-        clauses, values = self._scope_sql(talukas, district, taluka)
+        clauses, values = self._scope_sql(
+            talukas, district, taluka, classification=classification
+        ) if not include_all else ("1=1", [])
+        if district:
+            clauses += " AND t.scope_district = %s"
+            values.append(district)
+        if taluka:
+            clauses += " AND t.scope_taluka = %s"
+            values.append(taluka)
         if search:
             clauses += (
                 " AND (LOWER(t.tender_id) LIKE %s"
@@ -448,6 +473,8 @@ class _ReadRepository:
         search: Optional[str] = None,
         closing_before: Optional[str] = None,
         closing_after: Optional[str] = None,
+        classification: str = "ALL",
+        include_all: bool = False,
     ) -> list[dict[str, object]]:
         return self._strict_tenders(
             talukas,
@@ -456,14 +483,23 @@ class _ReadRepository:
             search,
             closing_before,
             closing_after,
+            classification=classification,
+            include_all=include_all,
         )
 
     def tender(
         self,
         tender_id: str,
         talukas: list[str],
+        classification: str = "IN_SCOPE",
+        include_all: bool = False,
     ) -> Optional[dict[str, object]]:
-        records = self._strict_tenders(talukas, tender_id=tender_id)
+        records = self._strict_tenders(
+            talukas,
+            tender_id=tender_id,
+            classification=classification,
+            include_all=include_all,
+        )
         return records[0] if records else None
 
     def organisations(self, talukas: list[str]) -> list[dict[str, object]]:

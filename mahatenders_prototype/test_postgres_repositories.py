@@ -273,10 +273,30 @@ class PostgreSQLRepositoryTests(unittest.TestCase):
         self.assertEqual(rows[0]["tender_id"], "TENDER-1")
         statement, params = handle.connection.statements[0]
         self.assertIn("t.scope_district IN (%s, %s)", statement)
-        self.assertIn("t.scope_taluka IN (", statement)
+        self.assertNotIn("t.scope_taluka IN (", statement)
         self.assertIn("LIKE '%%' || o.name || '%%'", statement)
         self.assertEqual(params[:2], ["Wardha", "Amravati"])
-        self.assertEqual(params[2:], talukas)
+        self.assertEqual(params[2:], [])
+
+    def test_tenders_support_all_classification_modes_without_taluka_requirement(self):
+        talukas = [
+            taluka
+            for district_talukas in DISTRICT_TALUKAS.values()
+            for taluka in district_talukas
+        ]
+        for classification in ("ALL", "IN_SCOPE", "UNKNOWN"):
+            handle = FakeHandle("main", ReadFakeConnection())
+            MainReadRepository(handle).tenders(
+                talukas, classification=classification
+            )
+            statement, _ = handle.connection.statements[0]
+            with self.subTest(classification=classification):
+                if classification == "UNKNOWN":
+                    self.assertIn("t.scope_status = 'UNKNOWN'", statement)
+                    self.assertNotIn("t.scope_district IN", statement)
+                else:
+                    self.assertIn("t.scope_district IN", statement)
+                self.assertNotIn("t.scope_taluka IN", statement)
 
     def test_organisations_falls_back_to_tender_chain_when_directory_has_no_match(self):
         handle = FakeHandle("main", EmptyThenFallbackConnection())

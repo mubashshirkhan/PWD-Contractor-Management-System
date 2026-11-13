@@ -1,0 +1,28 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: light;
+  --background: #f4f1eb;
+  --foreground: #282624;
+}
+
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body { margin: 0; background: var(--background); color: var(--foreground); }
+button, input, select { font: inherit; }
+::selection { background: #e4c4ad; color: #282624; }
+
+@layer components {
+  .field {
+    @apply h-10 rounded-md border border-line bg-paper px-3 text-sm text-ink outline-none transition-colors focus:border-saffron focus:ring-2 focus:ring-saffron/20;
+  }
+  .data-table th {
+    @apply border-b border-line bg-[#f8f8f5] px-4 py-3 text-left text-[11px] font-medium text-muted;
+  }
+  .data-table td {
+    @apply border-b border-line px-4 py-3 align-top text-sm;
+  }
+  .data-table tr:last-child td { @apply border-b-0; }
+}

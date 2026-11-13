@@ -79,6 +79,21 @@ function pythonBaseUrl() {
   return $("#pythonBaseUrl").value.trim().replace(/\/+$/, "");
 }
 
+function setPythonStatus(status) {
+  const text = $("#pythonStatusText");
+  const note = $("#pythonStatusNote");
+  if (text) {
+    text.textContent = status === "WORKING" ? "Connected" : status === "FAILED" ? "Unavailable" : "Awaiting check";
+  }
+  if (note) {
+    note.textContent = status === "WORKING"
+      ? "Production API responded successfully"
+      : status === "FAILED"
+        ? "Check the configured endpoint below"
+        : "Production API is configurable below";
+  }
+}
+
 async function fetchJson(url, options = {}) {
   const requestSequence = ++dashboardDiagnostics.requestSequence;
   const method = options.method || "GET";
@@ -156,21 +171,23 @@ async function loadScopedData() {
     if (health.ok !== true) throw new Error("Python API health response was not ok");
     const district = $("#districtFilter").value;
     const taluka = $("#talukaFilter").value;
+    const classification = $("#classificationFilter").value;
     const params = new URLSearchParams();
     if (district) params.set("district", district);
     if (taluka) params.set("taluka", taluka);
+    if (classification !== "ALL") params.set("classification", classification);
     const tenders = await fetchJson(`${pythonBaseUrl()}/api/v1/tenders?${params}`);
     currentTenders = tenders.tenders;
     renderScope(scope);
-    renderStats(stats, tenders.count, organisations.count);
+    renderStats(stats, tenders.count, organisations.count, tenders.classification_counts);
     renderOrganisations(organisations.organisations);
     renderTenders(currentTenders);
     const duration = Math.round(performance.now() - started);
-    setStatus($("#pythonStatus"), "WORKING");
-    addLog("Scoped Python API", "WORKING", `Loaded ${tenders.count} in-scope tenders`, duration);
+    setPythonStatus("WORKING");
+    addLog("Scoped Python API", "WORKING", `Loaded ${tenders.count} tender records`, duration);
     showNotification(`Loaded ${tenders.count} Wardha/Amravati tenders.`);
   } catch (error) {
-    setStatus($("#pythonStatus"), "FAILED");
+    setPythonStatus("FAILED");
     addLog("Scoped Python API", "FAILED", error.message);
     showNotification(`Scoped API unavailable: ${error.message}`, "error");
   }
@@ -186,12 +203,14 @@ function renderScope(scope) {
   select.value = selected;
 }
 
-function renderStats(stats, tenderCount, organisationCount) {
+function renderStats(stats, tenderCount, organisationCount, classificationCounts = {}) {
   $("#organisationCount").textContent = organisationCount;
   $("#tenderCount").textContent = tenderCount;
-  $("#coverageLabel").textContent = `${tenderCount} in-scope records`;
+  $("#coverageLabel").textContent = `${tenderCount} matching records`;
   $("#districtStats").textContent = (stats.districts || [])
     .map((item) => `${item.district}: ${item.tender_count}`).join(" · ") || "No records";
+  $("#classificationStats").textContent =
+    `IN_SCOPE: ${classificationCounts.IN_SCOPE || 0} · UNKNOWN: ${classificationCounts.UNKNOWN || 0}`;
 }
 
 function detailValue(tender, labels) {
@@ -577,13 +596,33 @@ function openMahaTenders() {
   addLog("MahaTenders homepage", "WORKING", "Opened public homepage; prior capture verified HTTP 200");
 }
 
+function initialiseSectionNavigation() {
+  const links = [...document.querySelectorAll(".nav-link")];
+  const sections = links
+    .map((link) => document.querySelector(link.getAttribute("href")))
+    .filter(Boolean);
+  if (!("IntersectionObserver" in window) || !sections.length) return;
+  const observer = new IntersectionObserver((entries) => {
+    const visible = entries.filter((entry) => entry.isIntersecting)
+      .sort((left, right) => right.intersectionRatio - left.intersectionRatio)[0];
+    if (!visible) return;
+    links.forEach((link) => {
+      const active = link.getAttribute("href") === `#${visible.target.id}`;
+      link.classList.toggle("active", active);
+      if (active) link.setAttribute("aria-current", "page");
+      else link.removeAttribute("aria-current");
+    });
+  }, { rootMargin: "-18% 0px -68% 0px", threshold: [0, 0.25, 0.6] });
+  sections.forEach((section) => observer.observe(section));
+}
+
 $("#refreshAll").addEventListener("click", () => { checkApiAnythingHealth(); loadScopedData(); });
 $("#clearLogs").addEventListener("click", () => { logs.length = 0; addLog("Logs", "WORKING", "Session logs cleared"); logs.length = 0; $("#logList").innerHTML = '<div class="log-empty">No tests run in this browser session.</div>'; });
-$("#openMahaTenders").addEventListener("click", openMahaTenders);
 document.querySelector('[data-test="health"]').addEventListener("click", checkApiAnythingHealth);
 $("#loadScopedData").addEventListener("click", loadScopedData);
 $("#districtFilter").addEventListener("change", loadScopedData);
 $("#talukaFilter").addEventListener("change", loadScopedData);
+$("#classificationFilter").addEventListener("change", loadScopedData);
 $("#searchDistrict").addEventListener("change", (event) => {
   if (locationReference) void cancelLocationSearch();
   locationReference = null;
@@ -596,4 +635,5 @@ $("#searchTaluka").addEventListener("change", (event) => {
 });
 $("#submitCaptcha").addEventListener("click", submitCaptcha);
 $("#cancelLocationSearch").addEventListener("click", cancelLocationSearch);
+initialiseSectionNavigation();
 addLog("Dashboard", "NOT TESTED", "Ready for bounded local API checks");

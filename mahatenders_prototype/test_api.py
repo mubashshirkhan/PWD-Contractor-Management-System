@@ -84,13 +84,16 @@ class ScopedApiTests(unittest.TestCase):
             connection.execute(
                 """INSERT INTO tenders
                    (tender_id, reference_number, title, organisation_chain,
+                    published_at, closing_at, estimated_value,
                     location_provenance, location_confidence, scope_status,
                     scope_district, scope_taluka, scope_provenance,
                     source_listing_url, source_detail_url, observed_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     tender["tender_id"], tender.get("reference_number"),
                     tender.get("title"), tender.get("organisation", "test"),
+                    tender.get("published_at"), tender.get("closing_at"),
+                    tender.get("estimated_value"),
                     "detail.location_explicit", 1.0, tender.get("scope_status", "IN_SCOPE"),
                     tender.get("district", "Wardha"), tender.get("taluka", "Arvi"),
                     "test", tender["listing_url"], tender["detail_url"],
@@ -129,6 +132,9 @@ class ScopedApiTests(unittest.TestCase):
                 "title": "Road work",
                 "reference_number": "REF-1",
                 "organisation": "PWD||Wardha",
+                "published_at": "07-Nov-2026 11:00 AM",
+                "closing_at": "21-Nov-2026 03:00 PM",
+                "estimated_value": "83,26,060",
                 "listing_url": "https://example.test/list?page=1",
                 "detail_url": "https://example.test/detail?session=secret&sp=token&x=1",
                 "evidence": json.dumps({"Tender Type": "Open Tender", "No. of Covers": "2"}),
@@ -152,6 +158,9 @@ class ScopedApiTests(unittest.TestCase):
         self.assertEqual([row["tender_id"] for row in body["tenders"]], ["JOB_1", "JOB_2"])
         self.assertEqual(body["tenders"][0]["detail_fields"]["Tender Type"], "Open Tender")
         self.assertEqual(body["tenders"][0]["detail_fields"]["No. of Covers"], "2")
+        self.assertEqual(body["tenders"][0]["published_at"], "07-Nov-2026 11:00 AM")
+        self.assertEqual(body["tenders"][0]["closing_at"], "21-Nov-2026 03:00 PM")
+        self.assertEqual(body["tenders"][0]["estimated_value"], "83,26,060")
         self.assertNotIn("session", body["tenders"][0]["source"]["url"])
         self.assertNotIn("sp=", body["tenders"][0]["source"]["url"])
         self.assertIn("x=1", body["tenders"][0]["source"]["url"])
@@ -224,8 +233,28 @@ class ScopedApiTests(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertEqual(
             [row["tender_id"] for row in body["tenders"]],
-            ["IN_SCOPE_1", "IN_SCOPE_2"],
+            ["IN_SCOPE_1", "IN_SCOPE_2", "UNKNOWN_1"],
         )
+        self.assertEqual(body["classification_counts"], {"IN_SCOPE": 2, "UNKNOWN": 1})
+
+    def test_classification_filter_selects_in_scope_or_unknown(self):
+        for classification, expected in (
+            ("IN_SCOPE", ["IN_SCOPE_1", "IN_SCOPE_2"]),
+            ("UNKNOWN", ["UNKNOWN_1"]),
+        ):
+            status, body = self.api.response(
+                "/api/v1/tenders", {"classification": [classification]}
+            )
+            self.assertEqual(status, 200)
+            self.assertEqual([row["tender_id"] for row in body["tenders"]], expected)
+
+    def test_taluka_filter_excludes_district_only_tenders(self):
+        status, body = self.api.response(
+            "/api/v1/tenders",
+            {"district": ["Amravati"], "taluka": ["Teosa"]},
+        )
+        self.assertEqual(status, 200)
+        self.assertEqual([row["tender_id"] for row in body["tenders"]], ["IN_SCOPE_2"])
 
     def test_both_allowed_districts_are_accessible(self):
         for district, tender_id in (("Wardha", "IN_SCOPE_1"), ("Amravati", "IN_SCOPE_2")):
@@ -256,6 +285,63 @@ class ScopedApiTests(unittest.TestCase):
             status, _ = self.api.response("/api/v1/tenders/" + tender_id, {})
             self.assertEqual(status, 404)
 
+    def test_out_of_scope_filter_is_explicit(self):
+        status, body = self.api.response(
+            "/api/v1/tenders", {"classification": ["OUT_OF_SCOPE"]}
+        )
+        self.assertEqual(status, 200)
+        self.assertEqual(
+            {row["tender_id"] for row in body["tenders"]},
+            {"OUT_SCOPE_1", "PUNE_1"},
+        )
+        status, _ = self.api.response(
+            "/api/v1/tenders/OUT_SCOPE_1",
+            {"classification": ["OUT_OF_SCOPE"]},
+        )
+        self.assertEqual(status, 200)
+
+    def test_location_search_does_not_filter_historical_status(self):
+        status, body = self.api.response(
+            "/api/v1/tenders",
+            {"location_search": ["1"], "district": ["Wardha"], "taluka": ["Arvi"]},
+        )
+        self.assertEqual(status, 200)
+        self.assertEqual([row["tender_id"] for row in body["tenders"]], ["IN_SCOPE_1"])
+        status, _ = self.api.response(
+            "/api/v1/tenders/OUT_SCOPE_1", {"location_search": ["1"]}
+        )
+        self.assertEqual(status, 200)
+
+    def test_location_search_includes_location_dataset_records_without_duplicates(self):
+        self.create_location_run([{
+            "tender_id": "LOCATION_ONLY_1",
+            "listing_url": "https://example.test/location-list",
+            "detail_url": "https://example.test/location-detail",
+            "district": "Wardha",
+            "taluka": "Arvi",
+            "scope_status": "UNKNOWN",
+            "title": "Location dataset tender",
+        }])
+        connection = sqlite3.connect(self.api.location_database)
+        connection.execute(
+            "UPDATE tenders SET published_at=?, closing_at=?, estimated_value=? "
+            "WHERE tender_id=?",
+            ("07-Nov-2026 11:00 AM", "21-Nov-2026 03:00 PM", "83,26,060", "LOCATION_ONLY_1"),
+        )
+        connection.commit()
+        connection.close()
+
+        status, body = self.api.response(
+            "/api/v1/tenders",
+            {"location_search": ["1"], "district": ["Wardha"], "taluka": ["Arvi"]},
+        )
+        self.assertEqual(status, 200)
+        records = {row["tender_id"]: row for row in body["tenders"]}
+        self.assertIn("IN_SCOPE_1", records)
+        self.assertIn("LOCATION_ONLY_1", records)
+        self.assertEqual(records["LOCATION_ONLY_1"]["published_at"], "07-Nov-2026 11:00 AM")
+        self.assertEqual(records["LOCATION_ONLY_1"]["estimated_value"], "83,26,060")
+
     def test_explicit_district_detail_is_returned(self):
         connection = sqlite3.connect(self.database)
         connection.execute(
@@ -278,6 +364,7 @@ class ScopedApiTests(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertEqual({row["district"] for row in stats["districts"]}, {"Amravati", "Wardha"})
         self.assertEqual(sum(row["tender_count"] for row in stats["talukas"]), 2)
+        self.assertEqual(stats["classification_counts"], {"IN_SCOPE": 2, "UNKNOWN": 1})
 
         status, organisations = self.api.response("/api/v1/organisations", {})
         self.assertEqual(status, 200)

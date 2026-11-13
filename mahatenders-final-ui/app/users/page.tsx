@@ -1,0 +1,2 @@
+import { PlannedPage } from "@/components/planned-page";
+export default function Page() { return <PlannedPage eyebrow="User management" title="Give each role the right view" description="A role-based access surface for contractor teams." body="Authentication and authorization are not part of the existing API, so this page remains an explicit placeholder rather than pretending to manage users." />; }
