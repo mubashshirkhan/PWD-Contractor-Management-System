@@ -1,23 +1,37 @@
+import Image from "next/image";
 import Link from "next/link";
-import { ArrowRight, CheckCircle2, FileCheck2, ShieldCheck } from "lucide-react";
+import { ArrowRight, CalendarDays, FileCheck2, MapPin } from "lucide-react";
 import { Button } from "@/components/ui/button";
+
+const highlights = [
+  { icon: MapPin, title: "Search by location", text: "Filter records by district and taluka." },
+  { icon: FileCheck2, title: "Review tender details", text: "See captured fields, covers, and documents." },
+  { icon: CalendarDays, title: "Check important dates", text: "Keep submission and opening dates in view." },
+];
 
 export default function HomePage() {
   return (
-    <div className="-mx-5 -mt-8 min-h-[calc(100vh-4rem)] bg-navy px-5 py-16 text-white lg:-mx-10 lg:-mt-10 lg:px-20 lg:py-24">
-      <div className="mx-auto grid max-w-6xl items-center gap-16 lg:grid-cols-[1.05fr_.95fr]">
-        <div>
-          <p className="mb-5 text-sm font-medium text-[#d99b72]">Arch Design Studio</p>
-          <h1 className="max-w-3xl font-serif text-5xl font-normal leading-[1.02] tracking-tight sm:text-7xl">A considered view of every <em className="text-[#d99b72]">project record</em></h1>
-          <p className="mt-7 max-w-xl text-base leading-7 text-slate-300">Search tender records by location, review source evidence, and keep project operations grounded in the information available to your team.</p>
-          <div className="mt-8"><Link href="/tender-search"><Button>Search tenders <ArrowRight className="h-4 w-4" /></Button></Link></div>
+    <div className="-mx-5 -mt-8 bg-[#f4f1eb] px-5 pb-8 pt-5 lg:-mx-10 lg:-mt-10 lg:px-10 lg:pb-10 lg:pt-8">
+      <section className="mx-auto grid max-w-7xl overflow-hidden rounded-2xl bg-[#242321] text-white shadow-lg md:grid-cols-[1.1fr_.9fr]">
+        <div className="flex flex-col justify-center px-7 py-10 sm:px-12 sm:py-14 lg:px-16 lg:py-16">
+          <p className="mb-4 text-xs font-semibold uppercase tracking-[0.18em] text-[#d5ac72]">Project operations</p>
+          <h1 className="max-w-xl font-serif text-4xl font-normal leading-[1.08] tracking-tight sm:text-5xl">A clearer view of every <em className="text-[#d5ac72]">project record</em></h1>
+          <p className="mt-5 max-w-lg text-sm leading-6 text-slate-300 sm:text-base sm:leading-7">Find tenders by location and review the information available for each opportunity.</p>
+          <div className="mt-7"><Link href="/tender-search"><Button className="h-11 px-5">Search tenders <ArrowRight className="h-4 w-4" /></Button></Link></div>
         </div>
-        <div className="rounded-2xl border border-white/15 bg-white/5 p-6">
-          <div className="flex items-center gap-2 text-sm text-emerald-200"><span className="h-2 w-2 rounded-full bg-emerald-300" /> Production API configured</div>
-          <div className="mt-12 border-l border-[#d99b72] pl-5"><p className="font-serif text-3xl">Evidence-led operations</p><p className="mt-2 text-sm text-[#d99b72]">Location before assumptions</p><p className="mt-8 text-sm leading-6 text-slate-300">Review the information captured for each tender and keep missing details clearly marked.</p></div>
-          <div className="mt-10 grid gap-3 border-t border-white/10 pt-5 text-sm text-slate-300"><p className="flex items-center gap-2"><FileCheck2 className="h-4 w-4 text-[#d99b72]" /> Tender record review</p><p className="flex items-center gap-2"><CheckCircle2 className="h-4 w-4 text-[#d99b72]" /> Location-based search</p><p className="flex items-center gap-2"><ArrowRight className="h-4 w-4 text-[#d99b72]" /> Source links and dates</p></div>
+        <div className="flex min-h-64 items-center justify-center bg-[#eeece6] p-6 sm:p-10 md:p-8 lg:p-12">
+          <div className="w-full max-w-[340px] rounded-xl bg-white p-2 shadow-sm">
+            <Image src="/architectural-arch-studio-logo.png" alt="Arch Design Studio" width={1536} height={1024} priority className="h-auto w-full object-contain" />
+          </div>
         </div>
-      </div>
+      </section>
+
+      <section aria-label="Workspace features" className="mx-auto grid max-w-7xl gap-5 border-t border-[#ded9cf] py-7 sm:grid-cols-3 sm:gap-8 lg:py-9">
+        {highlights.map(({ icon: Icon, title, text }) => <div key={title} className="flex items-start gap-3">
+          <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-white text-[#9b713f] shadow-sm"><Icon className="h-4 w-4" /></span>
+          <div><h2 className="text-sm font-semibold text-[#302e2a]">{title}</h2><p className="mt-1 text-xs leading-5 text-[#77736c]">{text}</p></div>
+        </div>)}
+      </section>
     </div>
   );
 }

@@ -2,12 +2,43 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { ArrowLeft, ExternalLink, MapPin } from "lucide-react";
-import { apiFetch, formatCurrency, formatDate, tenderLocation, tenderOrganisation, type Tender } from "@/lib/api";
+import { ArrowLeft, ExternalLink } from "lucide-react";
+import { apiFetch, type Tender } from "@/lib/api";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { SectionHeader } from "@/components/section-header";
 import { useParams } from "next/navigation";
+
+type Field = [string, string];
+
+function clean(value: unknown): string | undefined {
+  if (value === null || value === undefined) return undefined;
+  const text = String(value).trim();
+  return !text || /^(?:n\/?a|not available|null|undefined)$/i.test(text) ? undefined : text;
+}
+
+function values(fields: Record<string, string>, definitions: Array<[string, string[]]>): Field[] {
+  return definitions.flatMap(([label, aliases]) => {
+    const value = aliases.map((alias) => fields[alias]).find((candidate) => clean(candidate));
+    return clean(value) ? [[label, clean(value)!] as Field] : [];
+  });
+}
+
+function DataSection({ title, fields, children }: { title: string; fields?: Field[]; children?: React.ReactNode }) {
+  if ((!fields || fields.length === 0) && !children) return null;
+  return <Card>
+    <CardHeader><h2 className="font-serif text-xl">{title}</h2></CardHeader>
+    {fields && fields.length > 0 && <CardContent className="grid gap-x-8 gap-y-5 sm:grid-cols-2">{fields.map(([label, value]) => <div key={label} className="min-w-0 border-b border-line pb-3"><p className="mb-1 text-xs font-medium uppercase tracking-wide text-muted">{label}</p><p className="whitespace-pre-wrap break-words text-sm leading-6 text-ink">{value}</p></div>)}</CardContent>}
+    {children}
+  </Card>;
+}
+
+function RowsTable({ rows }: { rows: Array<Record<string, string>> }) {
+  const visibleRows = rows.filter((row) => Object.values(row).some((value) => clean(value)));
+  if (!visibleRows.length) return null;
+  const columns = [...new Set(visibleRows.flatMap((row) => Object.keys(row)))];
+  return <div className="overflow-x-auto"><table className="data-table w-full"><thead><tr>{columns.map((column) => <th key={column}>{column}</th>)}</tr></thead><tbody>{visibleRows.map((row, index) => <tr key={index}>{columns.map((column) => <td key={column} className="whitespace-pre-wrap">{clean(row[column]) || "—"}</td>)}</tr>)}</tbody></table></div>;
+}
 
 export default function TenderDetailsPage() {
   const params = useParams<{ tenderId: string }>();
@@ -24,48 +55,51 @@ export default function TenderDetailsPage() {
       .catch((reason) => setError(reason instanceof Error ? reason.message : "Tender details could not be loaded"));
   }, [params.tenderId]);
 
-  if (error) return <Card className="border-danger/30 bg-[#fff5f5] p-6 text-sm text-danger"><strong className="block text-base">Tender not found</strong><span className="mt-2 block">{error}</span><Link href={returnTo} className="mt-5 inline-flex items-center gap-2 font-medium text-copper"><ArrowLeft className="h-4 w-4" /> Back to search results</Link></Card>;
-  if (!tender) return <div className="space-y-6"><Skeleton className="h-4 w-36" /><Skeleton className="h-10 w-2/3 max-w-xl" /><Card><CardHeader><Skeleton className="h-6 w-48" /></CardHeader><CardContent className="grid gap-5 sm:grid-cols-2">{Array.from({ length: 10 }, (_, index) => <div key={index} className="space-y-2"><Skeleton className="h-3 w-24" /><Skeleton className="h-5 w-full" /></div>)}</CardContent></Card></div>;
-  const sections = tender.detail_sections || {};
-  const fields = Object.entries(sections.core || tender.detail_fields || {});
-  const financialFields = fields.filter(([label]) => isFinancialField(label));
-  const otherFields = fields.filter(([label]) => !isFinancialField(label));
-  return <div><Link href={returnTo} className="mb-6 inline-flex items-center gap-2 text-sm text-copper"><ArrowLeft className="h-4 w-4" /> Back to search results</Link><SectionHeader eyebrow="Tender details" title={tender.title || "Tender details"} description={tender.tender_id} /><div><Card><CardHeader><h2 className="font-serif text-xl">Tender information</h2></CardHeader><CardContent className="grid gap-4 sm:grid-cols-2"><Detail label="Tender ID" value={tender.tender_id} /><Detail label="Title" value={tender.title} /><Detail label="Organisation" value={tenderOrganisation(tender)} /><Detail label="Department" value={tender.product_category} /><Detail label="Location" value={tenderLocation(tender)} icon={<MapPin className="h-4 w-4 text-copper" />} /><Detail label="District" value={tender.district || tender.location_district} /><Detail label="Taluka" value={tender.taluka || tender.location_taluka} /><Detail label="Description" value={fields.find(([label]) => label === "Description")?.[1] || fields.find(([label]) => label === "Work Description")?.[1]} /><Detail label="Estimated value" value={formatCurrency(tender.estimated_value)} /><Detail label="Publication date" value={formatDate(tender.published_at)} /><Detail label="Closing date" value={formatDate(tender.closing_at)} /><div className="border-t border-line pt-4 sm:col-span-2"><p className="mb-1 text-xs text-muted">Official source</p>{tender.source_listing_url ? <SourceLink label="See tender on MahaTenders" url={tender.source_listing_url} /> : <p className="text-sm text-muted">Not available</p>}</div></CardContent></Card></div><StructuredSections sections={sections} />{(financialFields.length > 0 || otherFields.length > 0) && <><FieldCard title="Tender fees and deposits" fields={financialFields} currency /><FieldCard title="Captured tender fields" fields={otherFields} /></>}</div>;
-}
+  if (error) return <Card className="border-danger/30 bg-[#fff5f5] p-6 text-sm text-danger"><strong className="block text-base">Tender details could not be loaded</strong><span className="mt-2 block">{error}</span><Link href={returnTo} className="mt-5 inline-flex items-center gap-2 font-medium text-copper"><ArrowLeft className="h-4 w-4" /> Back to search results</Link></Card>;
+  if (!tender) return <div className="space-y-6"><Skeleton className="h-4 w-36" /><Skeleton className="h-10 w-2/3 max-w-xl" /><Card><CardHeader><Skeleton className="h-6 w-48" /></CardHeader><CardContent className="grid gap-5 sm:grid-cols-2">{Array.from({ length: 8 }, (_, index) => <Skeleton key={index} className="h-12 w-full" />)}</CardContent></Card></div>;
 
-function StructuredSections({ sections }: { sections: NonNullable<Tender["detail_sections"]> }) {
-  return <div className="mt-6 grid gap-6 md:grid-cols-2">
-    {sections.payments && sections.payments.length > 0 && <RowsCard label="Payment instruments" rows={sections.payments} columns={["S.No", "Bank Name"]} />}
-    {sections.covers && sections.covers.length > 0 && <RowsCard label="Covers information" rows={sections.covers} columns={["Cover No", "Cover Type", "Description", "Document Type"]} />}
-    {sections.documents && sections.documents.length > 0 && <RowsCard label="Tender documents" rows={sections.documents} columns={["S.No", "Description", "Document Name", "Document Size (in KB)", "Document Type"]} wide />}
-    {sections.corrigenda && sections.corrigenda.length > 0 && <RowsCard label="Corrigenda" rows={sections.corrigenda} columns={Object.keys(sections.corrigenda[0])} />}
+  const fields = tender.detail_sections?.core || tender.detail_fields || {};
+  const overview: Field[] = [
+    ["Tender ID", tender.tender_id],
+    ...values(fields, [["Reference number", ["Tender Reference Number"]], ["Tender title", ["Title"]], ["Organisation", ["Organisation Chain"]], ["Tender type", ["Tender Type"]], ["Category", ["Tender Category"]], ["Product", ["Product Category"]], ["Address", ["Address", "Work Location Address", "Site Address"]], ["Pincode", ["Pincode"]]]),
+    ...(clean(tender.location_raw || tender.location_city_village || tender.location_taluka || tender.location_district || fields.Location) ? [["Location", clean(tender.location_raw || tender.location_city_village || tender.location_taluka || tender.location_district || fields.Location)!] as Field] : []),
+  ];
+  if (!overview.some(([label]) => label === "Tender title") && clean(tender.title)) overview.push(["Tender title", clean(tender.title)!]);
+  if (!overview.some(([label]) => label === "Organisation") && clean(tender.organisation || tender.organisation_chain)) overview.push(["Organisation", clean(tender.organisation || tender.organisation_chain)!]);
+  if (!overview.some(([label]) => label === "Product") && clean(tender.product_category)) overview.push(["Product", clean(tender.product_category)!]);
+  const financial: Field[] = [
+    ...values(fields, [["EMD amount", ["EMD Amount in ₹"]], ["Tender fees", ["Tender Fee in ₹"]], ["Processing fee", ["Processing Fee in ₹"]], ["Payment information", ["Payment Mode"]]]),
+    ...(clean(tender.estimated_value) ? [["Estimated tender value", clean(tender.estimated_value)!] as Field] : []),
+  ];
+  const dates = values(fields, [["Published date", ["Published Date"]], ["Submission deadline", ["Bid Submission End Date"]], ["Submission start", ["Bid Submission Start Date"]], ["Opening date", ["Bid Opening Date"]], ["Sale start date", ["Document Download / Sale Start Date"]], ["Sale end date", ["Document Download / Sale End Date"]], ["Clarification start date", ["Clarification Start Date"]], ["Clarification end date", ["Clarification End Date"]], ["Pre-bid meeting date", ["Pre Bid Meeting Date"]]]);
+  if (!dates.some(([label]) => label === "Published date") && clean(tender.published_at)) dates.push(["Published date", clean(tender.published_at)!]);
+  if (!dates.some(([label]) => label === "Submission deadline") && clean(tender.closing_at)) dates.push(["Submission deadline", clean(tender.closing_at)!]);
+  const work = values(fields, [["Work description", ["Work Description", "Description"]], ["Work period", ["Period Of Work(Days)"]], ["Form of contract", ["Form Of Contract"]]]);
+  const excludedLabels = new Set(["Tender ID", "Tender Reference Number", "Title", "Organisation Chain", "Tender Type", "Tender Category", "Product Category", "Location", "Address", "Work Location Address", "Site Address", "Pincode", "Tender Value in ₹", "EMD Amount in ₹", "Tender Fee in ₹", "Processing Fee in ₹", "Payment Mode", "Published Date", "Bid Submission End Date", "Bid Submission Start Date", "Bid Opening Date", "Document Download / Sale Start Date", "Document Download / Sale End Date", "Clarification Start Date", "Clarification End Date", "Pre Bid Meeting Date", "Work Description", "Description", "Period Of Work(Days)", "Form Of Contract"]);
+  const additional = Object.entries(fields).flatMap(([label, value]) => !excludedLabels.has(label) && clean(value) ? [[label, clean(value)!] as Field] : []);
+  const payments = tender.detail_sections?.payments || [];
+  const corrigenda = tender.detail_sections?.corrigenda || [];
+  const covers = tender.detail_sections?.covers || [];
+  const documents = tender.detail_sections?.documents || [];
+
+  return <div>
+    <Link href={returnTo} className="mb-6 inline-flex items-center gap-2 text-sm font-medium text-copper"><ArrowLeft className="h-4 w-4" /> Back to search results</Link>
+    <SectionHeader eyebrow="Tender details" title={tender.title || "Tender details"} description={tender.tender_id} />
+    <div className="space-y-5">
+      <DataSection title="Tender Overview" fields={overview} />
+      <DataSection title="Financial Details" fields={financial} />
+      <DataSection title="Important Dates" fields={dates} />
+      <DataSection title="Work Details" fields={work} />
+      {(covers.length > 0 || documents.length > 0) && <Card><CardHeader><h2 className="font-serif text-xl">Covers and Documents</h2></CardHeader>
+        {covers.length > 0 && <div className="space-y-2 px-5 pb-5"><h3 className="text-xs font-semibold uppercase tracking-wide text-muted">Cover details</h3><RowsTable rows={covers} /></div>}
+        {documents.length > 0 && <div className="space-y-2 border-t border-line px-5 py-5"><h3 className="text-xs font-semibold uppercase tracking-wide text-muted">Available documents</h3><RowsTable rows={documents} /></div>}
+      </Card>}
+      {(payments.length > 0 || corrigenda.length > 0 || additional.length > 0 || Boolean(clean(tender.source_listing_url))) && <Card><CardHeader><h2 className="font-serif text-xl">Additional Information</h2></CardHeader>
+        {payments.length > 0 && <div className="space-y-2 px-5 pb-5"><h3 className="text-xs font-semibold uppercase tracking-wide text-muted">Payment details</h3><RowsTable rows={payments} /></div>}
+        {corrigenda.length > 0 && <div className="space-y-2 border-t border-line px-5 py-5"><h3 className="text-xs font-semibold uppercase tracking-wide text-muted">Corrigenda</h3><RowsTable rows={corrigenda} /></div>}
+        {additional.length > 0 && <CardContent className="grid gap-x-8 gap-y-5 border-t border-line sm:grid-cols-2">{additional.map(([label, value]) => <div key={label} className="border-b border-line pb-3"><p className="mb-1 text-xs font-medium uppercase tracking-wide text-muted">{label}</p><p className="whitespace-pre-wrap break-words text-sm leading-6">{value}</p></div>)}</CardContent>}
+        {clean(tender.source_listing_url) && <div className="border-t border-line px-5 py-4"><a className="inline-flex items-center gap-2 text-sm font-medium text-copper" href={tender.source_listing_url!} target="_blank" rel="noreferrer">Official tender source <ExternalLink className="h-4 w-4" /></a></div>}
+      </Card>}
+    </div>
   </div>;
-}
-
-function RowsCard({ label, rows, columns, wide = false }: { label: string; rows: Array<Record<string, string>>; columns: string[]; wide?: boolean }) {
-  return <Card className={wide ? "md:col-span-2" : undefined}><CardHeader><h2 className="font-serif text-xl">{label}</h2></CardHeader><div className="overflow-x-auto"><table className="data-table w-full"><thead><tr>{columns.map((column) => <th key={column}>{column}</th>)}</tr></thead><tbody>{rows.map((row, index) => <tr key={index}>{columns.map((column) => <td key={column}>{column === "Document Size (in KB)" ? formatDocumentSize(row[column]) : row[column] || "Not available"}</td>)}</tr>)}</tbody></table></div></Card>;
-}
-
-function formatDocumentSize(value?: string | null) {
-  if (!value) return "Not available";
-  const numeric = Number(value.replace(/,/g, "").trim());
-  return Number.isFinite(numeric) ? `${numeric.toFixed(2)} KB` : value;
-}
-
-function isFinancialField(label: string) {
-  const normalized = label.toLowerCase();
-  return normalized.includes("fee") || normalized.includes("emd") || normalized.includes("tender value") || normalized.includes("processing");
-}
-
-function FieldCard({ title, fields, currency = false }: { title: string; fields: Array<[string, string]>; currency?: boolean }) {
-  if (fields.length === 0) return null;
-  return <Card className="mt-6"><CardHeader><h2 className="font-serif text-xl">{title}</h2></CardHeader><div className="overflow-x-auto"><table className="data-table w-full"><thead><tr><th>Field</th><th>Value</th></tr></thead><tbody>{fields.map(([label, value]) => <tr key={label}><td className="font-medium">{label}</td><td className="text-muted">{currency && (label.includes("₹") || label.includes("Amount")) ? formatCurrency(value) : value || "Not available"}</td></tr>)}</tbody></table></div></Card>;
-}
-
-function Detail({ label, value, icon }: { label: string; value?: string | number | null; icon?: React.ReactNode }) {
-  return <div><p className="mb-1 flex items-center gap-2 text-xs text-muted">{icon}{label}</p><p className="text-sm leading-6">{value || "Not available"}</p></div>;
-}
-
-function SourceLink({ label, url }: { label: string; url: string }) {
-  return <a className="inline-flex items-center gap-2 font-medium text-copper" href={url} target="_blank" rel="noreferrer">{label}<ExternalLink className="h-4 w-4" /></a>;
 }

@@ -4,22 +4,23 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   BarChart3,
+  Calculator,
   ClipboardList,
   FolderKanban,
   ReceiptIndianRupee,
   Search,
-  Users,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { OneDriveConnectionStatus } from "@/components/onedrive-connection-status";
 
 const operations: Array<{ label: string; href: string; icon: LucideIcon }> = [
-  { label: "Project tracking", href: "/projects", icon: FolderKanban },
+  { label: "Project Tracking", href: "/projects", icon: FolderKanban },
   { label: "Tender Search", href: "/tender-search", icon: Search },
-  { label: "Payments & expenses", href: "/payments", icon: ReceiptIndianRupee },
-  { label: "Work orders", href: "/work-orders", icon: ClipboardList },
+  { label: "Payments & Expenses", href: "/payments", icon: ReceiptIndianRupee },
+  { label: "BOQ Calculator", href: "/boq-calculator", icon: Calculator },
+  { label: "Work Orders", href: "/work-orders", icon: ClipboardList },
   { label: "Reports", href: "/reports", icon: BarChart3 },
-  { label: "User management", href: "/users", icon: Users },
 ];
 
 export function AppShell({ children }: { children: React.ReactNode }) {
@@ -40,6 +41,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         <div className="border-t border-white/10 px-5 py-5 text-xs leading-5 text-slate-300">
           <div className="flex items-center gap-2 text-emerald-300"><span className="h-2 w-2 rounded-full bg-emerald-300" /> API configured</div>
           <p className="mt-2">Live records remain separate from planned modules.</p>
+          <OneDriveConnectionStatus />
         </div>
       </aside>
       <div className="lg:pl-64">
