@@ -1,6 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { queryKeys } from "@/lib/query-keys";
 import { FilePlus2, Pencil, Printer, RefreshCw, Save, Trash2, X } from "lucide-react";
 import { SectionHeader } from "@/components/section-header";
 
@@ -22,16 +24,32 @@ function money(value: number) { return new Intl.NumberFormat("en-IN", { style: "
 async function json<T>(response: Response): Promise<T> { const body = await response.json().catch(() => ({})); if (!response.ok) throw new Error(typeof body.error === "string" ? body.error : `Request failed (${response.status}).`); return body as T; }
 
 export function WorkOrders() {
-  const [data, setData] = useState<Data | null>(null); const [loading, setLoading] = useState(true); const [busy, setBusy] = useState(false); const [error, setError] = useState(""); const [notice, setNotice] = useState(""); const [search, setSearch] = useState(""); const [filter, setFilter] = useState("All statuses"); const [selectedId, setSelectedId] = useState<string | null>(null); const [form, setForm] = useState<Draft>(fresh("")); const [formOpen, setFormOpen] = useState(false); const [editing, setEditing] = useState(false);
-  const load = useCallback(async () => { setLoading(true); setError(""); try { const next = await json<Data>(await fetch("/api/work-orders", { cache: "no-store" })); setData(next); setSelectedId((id) => id && next.workOrders.some((w) => w.workOrderId === id) ? id : next.workOrders[0]?.workOrderId ?? null); } catch (e) { setError(e instanceof Error ? e.message : "Could not read Work Orders from OneDrive."); } finally { setLoading(false); } }, []);
-  useEffect(() => { void load(); }, [load]);
+  const queryClient = useQueryClient();
+  const workOrdersQuery = useQuery({ queryKey: queryKeys.workOrders, queryFn: async () => json<Data>(await fetch("/api/work-orders", { cache: "no-store" })) });
+  const data = workOrdersQuery.data ?? null;
+  const loading = workOrdersQuery.isPending;
+  const [busy, setBusy] = useState(false); const [error, setError] = useState(""); const [notice, setNotice] = useState(""); const [search, setSearch] = useState(""); const [filter, setFilter] = useState("All statuses"); const [selectedId, setSelectedId] = useState<string | null>(null); const [form, setForm] = useState<Draft>(fresh("")); const [formOpen, setFormOpen] = useState(false); const [editing, setEditing] = useState(false);
+  useEffect(() => {
+    if (data) setSelectedId((id) => id && data.workOrders.some((w) => w.workOrderId === id) ? id : data.workOrders[0]?.workOrderId ?? null);
+    if (workOrdersQuery.error instanceof Error) setError(workOrdersQuery.error.message);
+  }, [data, workOrdersQuery.error]);
+  const load = () => workOrdersQuery.refetch();
+  async function refreshWorkOrderRelatedData() {
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: queryKeys.workOrders, refetchType: "none" }),
+      queryClient.invalidateQueries({ queryKey: queryKeys.boqs, refetchType: "none" }),
+      queryClient.invalidateQueries({ queryKey: queryKeys.reports, refetchType: "none" }),
+      queryClient.invalidateQueries({ queryKey: queryKeys.dashboard, refetchType: "none" }),
+    ]);
+    await workOrdersQuery.refetch();
+  }
   const selected = data?.workOrders.find((w) => w.workOrderId === selectedId) ?? null;
   const filtered = useMemo(() => { const q = search.trim().toLowerCase(); return (data?.workOrders ?? []).filter((w) => (filter === "All statuses" || w.status === filter) && (!q || [w.workOrderNumber, w.projectName, w.contractorName, w.title].some((value) => value.toLowerCase().includes(q)))); }, [data, search, filter]);
   function beginCreate() { setForm(fresh(data?.nextWorkOrderNumber ?? "", data?.projects[0]?.projectId ?? "")); setEditing(false); setFormOpen(true); }
   function beginEdit(value: WorkOrder) { setForm(draftOf(value)); setEditing(true); setFormOpen(true); }
-  async function save(event: React.FormEvent) { event.preventDefault(); if (!data) return; setBusy(true); setError(""); setNotice(""); try { const payload = { ...form, contractAmount: Number(form.contractAmount), description: form.description || null, boqId: form.boqId || null }; const response = await fetch(editing && selected ? `/api/work-orders/${encodeURIComponent(selected.workOrderId)}` : "/api/work-orders", { method: editing ? "PATCH" : "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) }); const record = await json<WorkOrder>(response); setNotice("Work order saved and confirmed in OneDrive."); setFormOpen(false); await load(); setSelectedId(record.workOrderId); } catch (e) { setError(e instanceof Error ? e.message : "Work order could not be saved."); } finally { setBusy(false); } }
-  async function initialize() { setBusy(true); setError(""); try { await json(await fetch("/api/work-orders/initialize", { method: "POST" })); await load(); setNotice("Work Orders workbook is ready in the existing OneDrive folder."); } catch (e) { setError(e instanceof Error ? e.message : "Could not initialize the workbook."); } finally { setBusy(false); } }
-  async function remove(value: WorkOrder) { if (!window.confirm(`Delete ${value.workOrderNumber}? This removes that record from the Work Orders workbook.`)) return; setBusy(true); setError(""); try { await json(await fetch(`/api/work-orders/${encodeURIComponent(value.workOrderId)}`, { method: "DELETE" })); setNotice("Work order deleted and confirmed in OneDrive."); await load(); } catch (e) { setError(e instanceof Error ? e.message : "Work order could not be deleted."); } finally { setBusy(false); } }
+  async function save(event: React.FormEvent) { event.preventDefault(); if (!data) return; setBusy(true); setError(""); setNotice(""); try { const payload = { ...form, contractAmount: Number(form.contractAmount), description: form.description || null, boqId: form.boqId || null }; const response = await fetch(editing && selected ? `/api/work-orders/${encodeURIComponent(selected.workOrderId)}` : "/api/work-orders", { method: editing ? "PATCH" : "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) }); const record = await json<WorkOrder>(response); setNotice("Work order saved and confirmed in OneDrive."); setFormOpen(false); await refreshWorkOrderRelatedData(); setSelectedId(record.workOrderId); } catch (e) { setError(e instanceof Error ? e.message : "Work order could not be saved."); } finally { setBusy(false); } }
+  async function initialize() { setBusy(true); setError(""); try { await json(await fetch("/api/work-orders/initialize", { method: "POST" })); await refreshWorkOrderRelatedData(); setNotice("Work Orders workbook is ready in the existing OneDrive folder."); } catch (e) { setError(e instanceof Error ? e.message : "Could not initialize the workbook."); } finally { setBusy(false); } }
+  async function remove(value: WorkOrder) { if (!window.confirm(`Delete ${value.workOrderNumber}? This removes that record from the Work Orders workbook.`)) return; setBusy(true); setError(""); try { await json(await fetch(`/api/work-orders/${encodeURIComponent(value.workOrderId)}`, { method: "DELETE" })); setNotice("Work order deleted and confirmed in OneDrive."); await refreshWorkOrderRelatedData(); } catch (e) { setError(e instanceof Error ? e.message : "Work order could not be deleted."); } finally { setBusy(false); } }
   const update = (key: keyof Draft, value: string) => setForm((current) => ({ ...current, [key]: value, ...(key === "projectId" ? { boqId: "" } : {}) }));
   return <div>
     <SectionHeader eyebrow="Project operations" title="Work Orders" description="Create and track issued work against your saved projects." action={<div className="flex gap-2"><button className={quiet} onClick={() => void load()} disabled={loading || busy}><RefreshCw size={16}/> Refresh</button><button className={button} onClick={beginCreate} disabled={!data?.initialized || !data.projects.length}><FilePlus2 size={16}/> New Work Order</button></div>} />

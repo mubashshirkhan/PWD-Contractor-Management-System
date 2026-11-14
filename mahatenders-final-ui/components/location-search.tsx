@@ -5,21 +5,20 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useEffect } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowUpRight, LoaderCircle, MapPinned, ShieldCheck, X } from "lucide-react";
 import { apiFetch, formatCurrency, formatDate, tenderOrganisation, type LocationJob, type Tender } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import { queryKeys } from "@/lib/query-keys";
 
 const talukas: Record<string, string[]> = {
   Wardha: ["Wardha", "Seloo", "Deoli", "Hinganghat", "Samudrapur", "Karanja", "Arvi", "Ashti"],
   Amravati: ["Amravati", "Bhatkuli", "Nandgaon Khandeshwar", "Daryapur", "Anjangaon Surji", "Achalpur", "Chandurbazar", "Chikhaldara", "Dharni", "Morshi", "Warud", "Chandur Railway", "Teosa", "Dhamangaon Railway"],
 };
 
-function locationCacheKey(district: string, taluka: string) {
-  return `arch-design-location-results:v2:${district}:${taluka}`;
-}
-
 export function LocationSearch({ onResults }: { onResults?: (tenders: Tender[]) => void } = {}) {
+  const queryClient = useQueryClient();
   const [district, setDistrict] = useState("");
   const [taluka, setTaluka] = useState("");
   const [job, setJob] = useState<LocationJob>();
@@ -28,6 +27,17 @@ export function LocationSearch({ onResults }: { onResults?: (tenders: Tender[]) 
   const [captchaAnswer, setCaptchaAnswer] = useState("");
   const [busy, setBusy] = useState(false);
   const [hydrated, setHydrated] = useState(false);
+  const resultsKey = queryKeys.locationSearchResults(district, taluka);
+  const savedResultsQuery = useQuery({
+    queryKey: resultsKey,
+    enabled: hydrated && Boolean(district && taluka),
+    queryFn: async () => {
+      const previous = queryClient.getQueryData<{ runId: string; tenders: Tender[] }>(resultsKey);
+      if (!previous?.runId) return previous ?? null;
+      const result = await apiFetch<{ tenders: Tender[] }>(`/api/v1/location-search/runs/${encodeURIComponent(previous.runId)}/tenders`);
+      return { runId: previous.runId, tenders: result.tenders || [] };
+    },
+  });
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -35,20 +45,15 @@ export function LocationSearch({ onResults }: { onResults?: (tenders: Tender[]) 
     const nextTaluka = params.get("taluka") || "";
     setDistrict(nextDistrict);
     setTaluka(nextTaluka);
-    if (nextDistrict && nextTaluka) {
-      const cached = window.sessionStorage.getItem(locationCacheKey(nextDistrict, nextTaluka));
-      if (cached) {
-        try {
-          const restored = JSON.parse(cached) as Tender[];
-          setTenders(restored);
-          setResultCount(restored.length);
-        } catch {
-          window.sessionStorage.removeItem(locationCacheKey(nextDistrict, nextTaluka));
-        }
-      }
-    }
     setHydrated(true);
   }, []);
+
+  useEffect(() => {
+    if (!savedResultsQuery.data) return;
+    setTenders(savedResultsQuery.data.tenders);
+    setResultCount(savedResultsQuery.data.tenders.length);
+    onResults?.(savedResultsQuery.data.tenders);
+  }, [savedResultsQuery.data, onResults]);
 
   useEffect(() => {
     if (!hydrated) return;
@@ -92,7 +97,8 @@ export function LocationSearch({ onResults }: { onResults?: (tenders: Tender[]) 
           const tenders = result.tenders || [];
           setTenders(tenders);
           setResultCount(tenders.length);
-          window.sessionStorage.setItem(locationCacheKey(district, taluka), JSON.stringify(tenders));
+          await queryClient.cancelQueries({ queryKey: resultsKey, exact: true });
+          queryClient.setQueryData(resultsKey, { runId, tenders });
           onResults?.(tenders);
         }
       }

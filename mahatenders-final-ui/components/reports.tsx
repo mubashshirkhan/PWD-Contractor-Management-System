@@ -1,6 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { queryKeys } from "@/lib/query-keys";
 import { Download, Printer, RefreshCw } from "lucide-react";
 import { SectionHeader } from "@/components/section-header";
 
@@ -18,9 +20,12 @@ function money(value: number) { return new Intl.NumberFormat("en-IN", { style: "
 async function read<T>(response: Response): Promise<T> { const body = await response.json().catch(() => ({})); if (!response.ok) throw new Error(typeof body.error === "string" ? body.error : `Request failed (${response.status}).`); return body as T; }
 
 export function Reports() {
-  const [data, setData] = useState<Data | null>(null); const [loading, setLoading] = useState(true); const [error, setError] = useState(""); const [kind, setKind] = useState<Kind>("projects"); const [filters, setFilters] = useState<Filters>({ from: "", to: "", projectId: "", status: "" });
-  const load = useCallback(async () => { setLoading(true); setError(""); try { setData(await read<Data>(await fetch("/api/reports", { cache: "no-store" }))); } catch (e) { setError(e instanceof Error ? e.message : "Reports could not read OneDrive workbooks."); } finally { setLoading(false); } }, []);
-  useEffect(() => { void load(); }, [load]);
+  const reportsQuery = useQuery({ queryKey: queryKeys.reports, queryFn: async () => read<Data>(await fetch("/api/reports", { cache: "no-store" })) });
+  const data = reportsQuery.data ?? null;
+  const loading = reportsQuery.isPending;
+  const [error, setError] = useState(""); const [kind, setKind] = useState<Kind>("projects"); const [filters, setFilters] = useState<Filters>({ from: "", to: "", projectId: "", status: "" });
+  useEffect(() => { if (reportsQuery.error instanceof Error) setError(reportsQuery.error.message); }, [reportsQuery.error]);
+  const load = () => reportsQuery.refetch();
   const source = kind === "projects" ? data?.projects : kind === "work-orders" ? data?.workOrders : data?.boqs;
   const projectList = useMemo(() => { const items = [...(data?.projects.records ?? []).map((p) => ({ projectId: p.projectId, projectName: p.projectName })), ...(data?.workOrders.records ?? []).map((w) => ({ projectId: w.projectId, projectName: w.projectName }))]; return [...new Map(items.map((p) => [p.projectId, p])).values()]; }, [data]);
   const statuses = useMemo(() => [...new Set((source?.records ?? []).map((value) => (value as { status: string }).status))], [source]);

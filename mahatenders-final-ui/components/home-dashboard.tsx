@@ -1,6 +1,8 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { queryKeys } from "@/lib/query-keys";
 import Link from "next/link";
 import { ArrowRight, Calculator, CalendarDays, ChartNoAxesColumn, FileText, FolderKanban, ReceiptIndianRupee, TrendingUp, UserRound } from "lucide-react";
 import { Bar, BarChart, CartesianGrid, Cell, Legend, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
@@ -21,31 +23,38 @@ const compactCurrency = (value: number) => new Intl.NumberFormat("en-IN", { styl
 const indiaDate = new Intl.DateTimeFormat("en-IN", { timeZone: "Asia/Kolkata", weekday: "short", day: "2-digit", month: "short", year: "numeric" }).format(new Date());
 const emptyMessage = (source: Source<unknown> | undefined, message: string) => source?.error ?? (source?.initialized ? message : "Workbook not initialized.");
 
-async function source<T>(url: string, key: "projects" | "workOrders" | "boqs" | "transactions"): Promise<Source<T>> {
-  try {
-    const response = await fetch(url, { cache: "no-store" });
-    const data = await response.json() as ApiEnvelope<T>;
-    if (!response.ok) return { initialized: false, records: [], error: data.error ?? `Could not load ${key}.` };
-    const initialized = data.initialized ?? true;
-    return { initialized, records: (data[key] ?? []) as T[] };
-  } catch { return { initialized: false, records: [], error: `Could not load ${key}.` }; }
-}
-
 export function HomeDashboard() {
-  const [data, setData] = useState<DashboardData | null>(null);
-  const [loading, setLoading] = useState(true);
-  useEffect(() => {
-    let active = true;
-    void Promise.all([
-      source<Project>("/api/projects", "projects"),
-      source<WorkOrder>("/api/work-orders", "workOrders"),
-      source<Boq>("/api/boq", "boqs"),
-      source<Transaction>("/api/payments", "transactions"),
-    ]).then(([projects, workOrders, boqs, transactions]) => {
-      if (active) setData({ projects: { ...projects, records: projects.records.filter((project) => !project.isArchived) }, workOrders, boqs, transactions });
-    }).finally(() => { if (active) setLoading(false); });
-    return () => { active = false; };
-  }, []);
+  const queryClient = useQueryClient();
+  const dashboardQuery = useQuery({
+    queryKey: queryKeys.dashboard,
+    queryFn: async (): Promise<DashboardData> => {
+      const readSource = async <T,>(url: string, key: "projects" | "workOrders" | "boqs" | "transactions", queryKey: readonly unknown[]): Promise<Source<T>> => {
+        try {
+          const envelope = await queryClient.fetchQuery({
+            queryKey,
+            queryFn: async () => {
+              const response = await fetch(url, { cache: "no-store" });
+              const result = await response.json() as ApiEnvelope<T>;
+              if (!response.ok) throw new Error(result.error ?? `Could not load ${key}.`);
+              return result;
+            },
+          });
+          return { initialized: envelope.initialized ?? true, records: (envelope[key] ?? []) as T[] };
+        } catch (cause) {
+          return { initialized: false, records: [], error: cause instanceof Error ? cause.message : `Could not load ${key}.` };
+        }
+      };
+      const [projects, workOrders, boqs, transactions] = await Promise.all([
+        readSource<Project>("/api/projects", "projects", queryKeys.projects),
+        readSource<WorkOrder>("/api/work-orders", "workOrders", queryKeys.workOrders),
+        readSource<Boq>("/api/boq", "boqs", queryKeys.boqs),
+        readSource<Transaction>("/api/payments", "transactions", queryKeys.payments),
+      ]);
+      return { projects: { ...projects, records: projects.records.filter((project) => !project.isArchived) }, workOrders, boqs, transactions };
+    },
+  });
+  const data = dashboardQuery.data ?? null;
+  const loading = dashboardQuery.isPending;
 
   const projectProgress = useMemo(() => {
     const all = data?.projects.records ?? [];

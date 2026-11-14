@@ -1,8 +1,8 @@
 import "server-only";
 
-import { ConfidentialClientApplication } from "@azure/msal-node";
+import { ConfidentialClientApplication, InteractionRequiredAuthError } from "@azure/msal-node";
 import { GRAPH_SCOPES, readOneDriveConfig } from "./config";
-import { createTokenCachePlugin, getTokenCacheStore } from "./token-cache";
+import { createTokenCachePlugin, getTokenCacheStore, TokenCacheStorageError } from "./token-cache";
 
 export function createOneDriveMsalClient(sessionId: string) {
   const config = readOneDriveConfig();
@@ -26,4 +26,15 @@ export async function getOneDriveAccessToken(sessionId: string): Promise<string>
   const result = await client.acquireTokenSilent({ account, scopes: GRAPH_SCOPES.filter((scope) => scope === "Files.ReadWrite") });
   if (!result?.accessToken) throw new Error("Microsoft did not return an access token.");
   return result.accessToken;
+}
+
+export async function hasValidOneDriveSession(sessionId: string): Promise<boolean> {
+  try {
+    await getOneDriveAccessToken(sessionId);
+    return true;
+  } catch (error) {
+    if (error instanceof TokenCacheStorageError) throw error;
+    if (error instanceof InteractionRequiredAuthError || (error instanceof Error && error.message === "OneDrive is not connected for this session.")) return false;
+    throw error;
+  }
 }

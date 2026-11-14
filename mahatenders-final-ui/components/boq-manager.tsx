@@ -1,6 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { queryKeys } from "@/lib/query-keys";
 import { Copy, Download, FilePlus2, Pencil, Printer, RefreshCw, Save, Trash2 } from "lucide-react";
 
 type BoqStatus = "Draft" | "Finalized";
@@ -17,6 +19,7 @@ type Draft = { title: string; boqDate: string; projectId: string; workOrderId: s
 type ListResponse = { initialized: boolean; boqs: BoqRecord[]; projects: ProjectOption[] };
 
 const units = ["Nos", "Sqm", "Cum", "Rmt", "Kg", "Tonne", "Litre", "Hours", "Days", "Set", "Job"];
+const noBoqs: BoqRecord[] = [];
 const inputClass = "field mt-1 w-full";
 const buttonClass = "inline-flex items-center justify-center gap-2 rounded-md bg-copper px-4 py-2.5 text-sm font-medium text-white transition hover:bg-copper-dark disabled:cursor-not-allowed disabled:opacity-50";
 const secondaryClass = "inline-flex items-center justify-center gap-2 rounded-md border border-line bg-white px-3 py-2 text-sm font-medium text-ink transition hover:bg-field disabled:cursor-not-allowed disabled:opacity-50";
@@ -44,11 +47,13 @@ async function responseJson<T>(response: Response): Promise<T> {
 }
 
 export function BoqManager() {
-  const [boqs, setBoqs] = useState<BoqRecord[]>([]);
-  const [projects, setProjects] = useState<ProjectOption[]>([]);
-  const [initialized, setInitialized] = useState(false);
+  const queryClient = useQueryClient();
+  const boqQuery = useQuery({ queryKey: queryKeys.boqs, queryFn: async () => responseJson<ListResponse>(await fetch("/api/boq", { cache: "no-store" })) });
+  const boqs = boqQuery.data?.boqs ?? noBoqs;
+  const projects = boqQuery.data?.projects ?? [];
+  const initialized = boqQuery.data?.initialized ?? false;
   const [connected, setConnected] = useState(true);
-  const [loading, setLoading] = useState(true);
+  const loading = boqQuery.isPending;
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
@@ -59,24 +64,27 @@ export function BoqManager() {
   const [editing, setEditing] = useState(false);
   const [creating, setCreating] = useState(false);
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    setError("");
-    try {
-      const result = await responseJson<ListResponse>(await fetch("/api/boq", { cache: "no-store" }));
+  useEffect(() => {
+    if (boqQuery.data) {
       setConnected(true);
-      setBoqs(result.boqs);
-      setProjects(result.projects);
-      setInitialized(result.initialized);
-      setSelectedId((current) => current && result.boqs.some((boq) => boq.boqId === current) ? current : result.boqs[0]?.boqId ?? null);
-      if (!result.initialized) setDraft((current) => ({ ...current, projectId: current.projectId || result.projects[0]?.projectId || "" }));
-    } catch (cause) {
-      if (cause instanceof Error && cause.message.toLowerCase().includes("connect onedrive")) setConnected(false);
-      setError(cause instanceof Error ? cause.message : "Could not load BOQs from OneDrive.");
-    } finally { setLoading(false); }
-  }, []);
-
-  useEffect(() => { void load(); }, [load]);
+      setSelectedId((current) => current && boqQuery.data.boqs.some((boq) => boq.boqId === current) ? current : boqQuery.data.boqs[0]?.boqId ?? null);
+      if (!boqQuery.data.initialized) setDraft((current) => ({ ...current, projectId: current.projectId || boqQuery.data.projects[0]?.projectId || "" }));
+    }
+    if (boqQuery.error instanceof Error) {
+      if (boqQuery.error.message.toLowerCase().includes("connect onedrive")) setConnected(false);
+      setError(boqQuery.error.message);
+    }
+  }, [boqQuery.data, boqQuery.error]);
+  const load = () => boqQuery.refetch();
+  async function refreshBoqRelatedData() {
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: queryKeys.boqs, refetchType: "none" }),
+      queryClient.invalidateQueries({ queryKey: queryKeys.workOrders, refetchType: "none" }),
+      queryClient.invalidateQueries({ queryKey: queryKeys.reports, refetchType: "none" }),
+      queryClient.invalidateQueries({ queryKey: queryKeys.dashboard, refetchType: "none" }),
+    ]);
+    await boqQuery.refetch();
+  }
 
   const filtered = useMemo(() => {
     const search = query.trim().toLowerCase();
@@ -127,7 +135,7 @@ export function BoqManager() {
     try {
       const result = await responseJson<{ created: boolean }>(await fetch("/api/boq/initialize", { method: "POST" }));
       setNotice(result.created ? "BOQ.xlsx was created in the existing OneDrive BOQ folder and verified by readback." : "BOQ.xlsx was found and verified in OneDrive.");
-      await load();
+      await refreshBoqRelatedData();
     } catch (cause) { setError(cause instanceof Error ? cause.message : "Could not initialize BOQ.xlsx."); }
     finally { setBusy(false); }
   }
@@ -144,7 +152,8 @@ export function BoqManager() {
     try {
       const endpoint = creating ? "/api/boq" : `/api/boq/${encodeURIComponent(selectedId!)}`;
       const record = await responseJson<BoqRecord>(await fetch(endpoint, { method: creating ? "POST" : "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) }));
-      setBoqs((current) => creating ? [record, ...current] : current.map((boq) => boq.boqId === record.boqId ? record : boq));
+      queryClient.setQueryData<ListResponse>(queryKeys.boqs, (current) => current ? { ...current, boqs: creating ? [record, ...current.boqs] : current.boqs.map((boq) => boq.boqId === record.boqId ? record : boq) } : current);
+      await refreshBoqRelatedData();
       setSelectedId(record.boqId); setDraft(draftFrom(record)); setCreating(false); setEditing(false);
       setNotice(`Saved ${record.boqNumber} to OneDrive and confirmed it by readback.`);
     } catch (cause) { setError(cause instanceof Error ? cause.message : "BOQ save failed; OneDrive did not confirm the save."); }
@@ -156,7 +165,8 @@ export function BoqManager() {
     setBusy(true); setError(""); setNotice("");
     try {
       await responseJson<{ deleted: boolean }>(await fetch(`/api/boq/${encodeURIComponent(selected.boqId)}`, { method: "DELETE" }));
-      setBoqs((current) => current.filter((boq) => boq.boqId !== selected.boqId));
+      queryClient.setQueryData<ListResponse>(queryKeys.boqs, (current) => current ? { ...current, boqs: current.boqs.filter((boq) => boq.boqId !== selected.boqId) } : current);
+      await refreshBoqRelatedData();
       setSelectedId(null); setCreating(false); setEditing(false); setNotice(`${selected.boqNumber} was deleted and verified in OneDrive.`);
     } catch (cause) { setError(cause instanceof Error ? cause.message : "BOQ deletion could not be confirmed."); }
     finally { setBusy(false); }
@@ -167,7 +177,8 @@ export function BoqManager() {
     setBusy(true); setError(""); setNotice("");
     try {
       const record = await responseJson<BoqRecord>(await fetch(`/api/boq/${encodeURIComponent(selected.boqId)}/${path}`, { method: "POST" }));
-      setBoqs((current) => path === "duplicate" ? [record, ...current] : current.map((boq) => boq.boqId === record.boqId ? record : boq));
+      queryClient.setQueryData<ListResponse>(queryKeys.boqs, (current) => current ? { ...current, boqs: path === "duplicate" ? [record, ...current.boqs] : current.boqs.map((boq) => boq.boqId === record.boqId ? record : boq) } : current);
+      await refreshBoqRelatedData();
       openRecord(record);
       if (path === "reopen") { setDraft(draftFrom(record)); setEditing(true); setNotice(`${record.boqNumber} was reopened and verified in OneDrive.`); }
       else { setDraft(draftFrom(record)); setCreating(false); setEditing(true); setNotice(`Created ${record.boqNumber} as a copy and verified it in OneDrive.`); }

@@ -1,7 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { queryKeys } from "@/lib/query-keys";
 import { ArrowUpRight, ChevronLeft, ChevronRight, RefreshCw, SlidersHorizontal } from "lucide-react";
 import { apiFetch, formatCurrency, formatDate, tenderLocation, tenderOrganisation, type LocationOptionsResponse, type Tender, type TendersResponse } from "@/lib/api";
 import { Button } from "@/components/ui/button";
@@ -18,6 +20,7 @@ type Filters = {
 };
 
 const defaultFilters: Filters = { q: "", district: "", taluka: "", sort: "closing", page: 1 };
+const noTenders: Tender[] = [];
 
 function readFilters(): Filters {
   if (typeof window === "undefined") return defaultFilters;
@@ -51,14 +54,28 @@ function locationValue(tender: Tender, field: "district" | "taluka") {
 export function TenderRegister({ title = "Tender search", description = "Search tender records by location and review the information captured from the source.", showLocationSearch = true, path = "/tender-search" }: { title?: string; description?: string; showLocationSearch?: boolean; path?: string }) {
   const [filters, setFilters] = useState<Filters>(defaultFilters);
   const [hydrated, setHydrated] = useState(false);
-  const [tenders, setTenders] = useState<Tender[]>([]);
-  const [locations, setLocations] = useState<LocationOptionsResponse>();
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string>();
+  const [manualTenders, setManualTenders] = useState<Tender[] | null>(null);
+  const [localError, setLocalError] = useState<string>();
   const pageSize = 10;
+  const scopeQuery = useQuery({ queryKey: queryKeys.tenderScope, queryFn: () => apiFetch<LocationOptionsResponse>("/api/v1/scope") });
+  const params = new URLSearchParams();
+  params.set("location_search", "1");
+  if (filters.q) params.set("q", filters.q);
+  if (filters.district) params.set("district", filters.district);
+  if (filters.taluka) params.set("taluka", filters.taluka);
+  const searchKey = queryKeys.tenderSearch({ path, locationSearch: true, q: filters.q, district: filters.district, taluka: filters.taluka });
+  const tendersQuery = useQuery({
+    queryKey: searchKey,
+    enabled: hydrated,
+    queryFn: () => apiFetch<TendersResponse>(`/api/v1/tenders?${params.toString()}`),
+  });
+  const locations = scopeQuery.data;
+  const tenders = manualTenders ?? tendersQuery.data?.tenders ?? noTenders;
+  const loading = !hydrated || (tendersQuery.isPending && !tendersQuery.data);
+  const error = localError ?? (scopeQuery.error instanceof Error ? scopeQuery.error.message : undefined) ?? (tendersQuery.error instanceof Error ? tendersQuery.error.message : undefined);
 
   useEffect(() => {
-    const restore = () => setFilters(readFilters());
+    const restore = () => { setManualTenders(null); setLocalError(undefined); setFilters(readFilters()); };
     restore();
     setHydrated(true);
     window.addEventListener("popstate", restore);
@@ -66,50 +83,10 @@ export function TenderRegister({ title = "Tender search", description = "Search 
   }, []);
 
   useEffect(() => {
-    apiFetch<LocationOptionsResponse>("/api/v1/scope")
-      .then(setLocations)
-      .catch((reason) => setError(reason instanceof Error ? reason.message : "Location options could not be loaded"));
-  }, []);
-
-  useEffect(() => {
     if (!hydrated) return;
     const query = filterQuery(filters);
     window.history.replaceState(null, "", `${window.location.pathname}${query ? `?${query}` : ""}`);
   }, [filters, hydrated]);
-
-  useEffect(() => {
-    if (!hydrated) return;
-    let active = true;
-    setLoading(true);
-    setError(undefined);
-    const params = new URLSearchParams();
-    params.set("location_search", "1");
-    if (filters.q) params.set("q", filters.q);
-    if (filters.district) params.set("district", filters.district);
-    if (filters.taluka) params.set("taluka", filters.taluka);
-    const cacheKey = `arch-design-tenders:v2:${window.location.pathname}?${params.toString()}`;
-    const cached = window.sessionStorage.getItem(cacheKey);
-    if (cached) {
-      try {
-        const result = JSON.parse(cached) as TendersResponse;
-        setTenders(result.tenders || []);
-        setLoading(false);
-        return () => { active = false; };
-      } catch {
-        window.sessionStorage.removeItem(cacheKey);
-      }
-    }
-    apiFetch<TendersResponse>(`/api/v1/tenders?${params.toString()}`).then((result) => {
-      if (!active) return;
-      setTenders(result.tenders || []);
-      window.sessionStorage.setItem(cacheKey, JSON.stringify(result));
-    }).catch((reason) => {
-      if (active) setError(reason instanceof Error ? reason.message : "Tender records could not be loaded");
-    }).finally(() => {
-      if (active) setLoading(false);
-    });
-    return () => { active = false; };
-  }, [filters.q, filters.district, filters.taluka, hydrated]);
 
   const districts = Object.keys(locations?.districts || {});
   const talukas = filters.district ? locations?.districts?.[filters.district]?.talukas || [] : [];
@@ -120,16 +97,25 @@ export function TenderRegister({ title = "Tender search", description = "Search 
   const pageCount = Math.max(1, Math.ceil(sorted.length / pageSize));
   const currentPage = Math.min(filters.page, pageCount);
   const visible = sorted.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+  const receiveLocationResults = useCallback((results: Tender[]) => setManualTenders(results), []);
 
   function update(partial: Partial<Filters>) {
+    setManualTenders(null);
+    setLocalError(undefined);
     setFilters((current) => ({ ...current, ...partial, page: partial.page || 1 }));
+  }
+
+  async function refreshSearch() {
+    setManualTenders(null);
+    setLocalError(undefined);
+    await tendersQuery.refetch();
   }
 
   return (
     <div>
       <div className="mb-6 flex items-end justify-between gap-4">
         <div><p className="mb-2 text-xs font-medium text-copper">Tender search</p><h1 className="font-serif text-3xl tracking-tight text-ink">{title}</h1><p className="mt-2 max-w-2xl text-sm leading-6 text-muted">{description}</p></div>
-        <Button variant="secondary" onClick={() => setFilters((current) => ({ ...current }))} disabled={loading}><RefreshCw className={loading ? "h-4 w-4 animate-spin" : "h-4 w-4"} /> Refresh</Button>
+        <Button variant="secondary" onClick={() => void refreshSearch()} disabled={tendersQuery.isFetching}><RefreshCw className={tendersQuery.isFetching ? "h-4 w-4 animate-spin" : "h-4 w-4"} /> Refresh</Button>
       </div>
       <Card className="mb-6">
         <CardContent className="grid gap-3 md:grid-cols-[1.4fr_1fr_1fr_auto]">
@@ -145,7 +131,7 @@ export function TenderRegister({ title = "Tender search", description = "Search 
         <div className="overflow-x-auto"><table className="data-table w-full"><thead><tr><th>Tender ID</th><th>Title</th><th>Organisation</th><th>District</th><th>Taluka</th><th>Published</th><th>Closing</th><th>Estimated value</th><th /></tr></thead><tbody>{loading ? Array.from({ length: 5 }, (_, index) => <tr key={index}>{Array.from({ length: 9 }, (_, cell) => <td key={cell}><Skeleton className="h-4 w-full min-w-20" /></td>)}</tr>) : visible.map((tender) => { const returnTo = `${path}${filterQuery(filters) ? `?${filterQuery(filters)}` : ""}`; return <tr key={tender.tender_id}><td className="whitespace-nowrap font-medium">{tender.tender_id}</td><td className="min-w-[220px]">{tender.title || "Not available"}</td><td className="min-w-[180px]">{tenderOrganisation(tender)}</td><td>{locationValue(tender, "district")}</td><td>{locationValue(tender, "taluka")}</td><td className="whitespace-nowrap text-muted">{formatDate(tender.published_at)}</td><td className="whitespace-nowrap text-muted">{formatDate(tender.closing_at)}</td><td className="whitespace-nowrap text-muted">{formatCurrency(tender.estimated_value)}</td><td><Link href={`/tenders/${encodeURIComponent(tender.tender_id)}?returnTo=${encodeURIComponent(returnTo)}`} className="inline-flex items-center gap-1 whitespace-nowrap text-sm font-medium text-copper">Details <ArrowUpRight className="h-4 w-4" /></Link></td></tr>; })}</tbody></table>{!loading && !visible.length && <div className="p-10 text-center text-sm text-muted">No tenders match these location filters</div>}</div>
         {pageCount > 1 && <div className="flex items-center justify-between border-t border-line px-5 py-3 text-sm text-muted"><span>Page {currentPage} of {pageCount}</span><div className="flex gap-2"><Button variant="quiet" disabled={currentPage === 1} onClick={() => update({ page: currentPage - 1 })}><ChevronLeft className="h-4 w-4" /> Previous</Button><Button variant="quiet" disabled={currentPage === pageCount} onClick={() => update({ page: currentPage + 1 })}>Next <ChevronRight className="h-4 w-4" /></Button></div></div>}
       </Card>
-      {showLocationSearch && <div className="mt-8"><LocationSearch onResults={setTenders} /></div>}
+      {showLocationSearch && <div className="mt-8"><LocationSearch onResults={receiveLocationResults} /></div>}
     </div>
   );
 }

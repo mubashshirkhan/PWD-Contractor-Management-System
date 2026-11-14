@@ -10,6 +10,7 @@ export type OAuthTransaction = {
   nonce: string;
   verifier: string;
   sessionId: string;
+  previousSessionId?: string;
   createdAt: number;
 };
 
@@ -36,6 +37,7 @@ export function openOAuthTransaction(value: string): OAuthTransaction | null {
     const transaction = JSON.parse(plaintext) as OAuthTransaction;
     if (Date.now() - transaction.createdAt > 10 * 60 * 1000) return null;
     if (![transaction.state, transaction.nonce, transaction.verifier, transaction.sessionId].every((part) => typeof part === "string" && part.length > 0)) return null;
+    if (transaction.previousSessionId !== undefined && (typeof transaction.previousSessionId !== "string" || !transaction.previousSessionId)) return null;
     return transaction;
   } catch {
     return null;

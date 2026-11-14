@@ -2,12 +2,14 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { ArrowLeft, ExternalLink } from "lucide-react";
 import { apiFetch, type Tender } from "@/lib/api";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { SectionHeader } from "@/components/section-header";
 import { useParams } from "next/navigation";
+import { queryKeys } from "@/lib/query-keys";
 
 type Field = [string, string];
 
@@ -42,18 +44,16 @@ function RowsTable({ rows }: { rows: Array<Record<string, string>> }) {
 
 export default function TenderDetailsPage() {
   const params = useParams<{ tenderId: string }>();
-  const [tender, setTender] = useState<Tender>();
   const [returnTo, setReturnTo] = useState("/tender-search");
-  const [error, setError] = useState<string>();
+  const tenderId = decodeURIComponent(params.tenderId);
+  const tenderQuery = useQuery({ queryKey: queryKeys.tenderDetail(tenderId), queryFn: () => apiFetch<Tender>(`/api/v1/tenders/${encodeURIComponent(tenderId)}?location_search=1`) });
+  const tender = tenderQuery.data;
+  const error = tenderQuery.error instanceof Error ? tenderQuery.error.message : undefined;
 
   useEffect(() => {
     const queryReturnTo = new URLSearchParams(window.location.search).get("returnTo");
     if (queryReturnTo?.startsWith("/")) setReturnTo(queryReturnTo);
-    const tenderId = decodeURIComponent(params.tenderId);
-    apiFetch<Tender>(`/api/v1/tenders/${encodeURIComponent(tenderId)}?location_search=1`)
-      .then(setTender)
-      .catch((reason) => setError(reason instanceof Error ? reason.message : "Tender details could not be loaded"));
-  }, [params.tenderId]);
+  }, []);
 
   if (error) return <Card className="border-danger/30 bg-[#fff5f5] p-6 text-sm text-danger"><strong className="block text-base">Tender details could not be loaded</strong><span className="mt-2 block">{error}</span><Link href={returnTo} className="mt-5 inline-flex items-center gap-2 font-medium text-copper"><ArrowLeft className="h-4 w-4" /> Back to search results</Link></Card>;
   if (!tender) return <div className="space-y-6"><Skeleton className="h-4 w-36" /><Skeleton className="h-10 w-2/3 max-w-xl" /><Card><CardHeader><Skeleton className="h-6 w-48" /></CardHeader><CardContent className="grid gap-5 sm:grid-cols-2">{Array.from({ length: 8 }, (_, index) => <Skeleton key={index} className="h-12 w-full" />)}</CardContent></Card></div>;

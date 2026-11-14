@@ -1,5 +1,5 @@
 {
-  "run_id": 73,
+  "run_id": 76,
   "mode": "location",
   "status": "COMPLETED",
   "limits": {
@@ -8,36 +8,36 @@
     "request_delay_seconds": 1.0
   },
   "talukas_searched": [
-    "Bhatkuli"
+    "Hinganghat"
   ],
   "search_requests": 1,
   "listing_pages_processed": 1,
-  "tender_ids_discovered": 1,
-  "unique_tender_ids_discovered": 1,
-  "tender_details_attempted": 1,
-  "unique_tenders_retrieved": 1,
-  "tender_details_retrieved": 1,
+  "tender_ids_discovered": 20,
+  "unique_tender_ids_discovered": 20,
+  "tender_details_attempted": 20,
+  "unique_tenders_retrieved": 20,
+  "tender_details_retrieved": 20,
   "tender_details_failed": 0,
-  "in_scope_tenders_retrieved": 1,
+  "in_scope_tenders_retrieved": 20,
   "unknown_location_tenders_excluded": 0,
   "out_of_scope_tenders_excluded": 0,
   "duplicate_tenders_prevented": 0,
   "errors": [],
   "taluka_results": [
     {
-      "taluka": "Bhatkuli",
-      "district": "Amravati",
+      "taluka": "Hinganghat",
+      "district": "Wardha",
       "search_requests": 1,
       "pages_processed": 1,
-      "tender_ids_discovered": 1,
-      "details_attempted": 1,
-      "details_succeeded": 1,
+      "tender_ids_discovered": 20,
+      "details_attempted": 20,
+      "details_succeeded": 20,
       "details_failed": 0,
       "status": "COMPLETED",
       "errors": [],
-      "finished_at": "2026-11-13T18:46:53.540283+00:00"
+      "finished_at": "2026-11-14T17:24:31.433029+00:00"
     }
   ],
-  "finished_at": "2026-11-13T18:46:53.540293+00:00",
-  "processing_seconds": 2.818
+  "finished_at": "2026-11-14T17:24:31.433041+00:00",
+  "processing_seconds": 33.416
 }

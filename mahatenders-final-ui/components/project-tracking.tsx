@@ -1,6 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { queryKeys } from "@/lib/query-keys";
 import { Trash2 } from "lucide-react";
 
 type ProjectStatus = "Planned" | "In Progress" | "On Hold" | "Completed";
@@ -32,6 +34,7 @@ const emptyProject: ProjectDraft = {
   startDate: "", plannedCompletionDate: "", status: "Planned",
 };
 const projectStatuses: ProjectStatus[] = ["Planned", "In Progress", "On Hold", "Completed"];
+const noProjects: Project[] = [];
 
 async function requestJson<T>(url: string, init?: RequestInit): Promise<T> {
   const response = await fetch(url, { cache: "no-store", ...init, headers: { "Content-Type": "application/json", ...init?.headers } });
@@ -81,10 +84,12 @@ const primaryButton = "inline-flex items-center justify-center rounded-md bg-cop
 const secondaryButton = "inline-flex items-center justify-center gap-2 rounded-md border border-line bg-white px-3 py-2 text-sm font-medium text-ink transition hover:bg-[#f8f6f2] disabled:cursor-not-allowed disabled:opacity-60";
 
 export function ProjectTracking() {
-  const [projects, setProjects] = useState<Project[]>([]);
-  const [initialized, setInitialized] = useState(false);
+  const queryClient = useQueryClient();
+  const projectsQuery = useQuery({ queryKey: queryKeys.projects, queryFn: () => requestJson<{ initialized: boolean; projects: Project[] }>("/api/projects") });
+  const projects = projectsQuery.data?.projects ?? noProjects;
+  const initialized = projectsQuery.data?.initialized ?? false;
   const [connected, setConnected] = useState(true);
-  const [loading, setLoading] = useState(true);
+  const loading = projectsQuery.isPending;
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
@@ -95,22 +100,28 @@ export function ProjectTracking() {
   const [projectEditor, setProjectEditor] = useState<{ mode: "create" | "edit"; project?: Project } | null>(null);
   const [projectForm, setProjectForm] = useState<ProjectDraft>(emptyProject);
 
-  const loadProjects = useCallback(async () => {
-    setLoading(true);
-    setError("");
-    try {
-      const result = await requestJson<{ initialized: boolean; projects: Project[] }>("/api/projects");
+  useEffect(() => {
+    if (projectsQuery.data) {
       setConnected(true);
-      setInitialized(result.initialized);
-      setProjects(result.projects);
-      setSelectedId((current) => current && result.projects.some((project) => project.projectId === current) ? current : result.projects[0]?.projectId ?? null);
-    } catch (cause) {
-      if (cause instanceof Error && cause.message.includes("Connect OneDrive")) setConnected(false);
-      setError(cause instanceof Error ? cause.message : "Could not load Project Tracking.");
-    } finally { setLoading(false); }
-  }, []);
-
-  useEffect(() => { void loadProjects(); }, [loadProjects]);
+      setSelectedId((current) => current && projectsQuery.data.projects.some((project) => project.projectId === current) ? current : projectsQuery.data.projects[0]?.projectId ?? null);
+    }
+    if (projectsQuery.error instanceof Error) {
+      if (projectsQuery.error.message.includes("Connect OneDrive")) setConnected(false);
+      setError(projectsQuery.error.message);
+    }
+  }, [projectsQuery.data, projectsQuery.error]);
+  const loadProjects = () => projectsQuery.refetch();
+  async function refreshProjectRelatedData() {
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: queryKeys.projects, refetchType: "none" }),
+      queryClient.invalidateQueries({ queryKey: queryKeys.boqs, refetchType: "none" }),
+      queryClient.invalidateQueries({ queryKey: queryKeys.workOrders, refetchType: "none" }),
+      queryClient.invalidateQueries({ queryKey: queryKeys.payments, refetchType: "none" }),
+      queryClient.invalidateQueries({ queryKey: queryKeys.reports, refetchType: "none" }),
+      queryClient.invalidateQueries({ queryKey: queryKeys.dashboard, refetchType: "none" }),
+    ]);
+    await projectsQuery.refetch();
+  }
 
   const visibleProjects = useMemo(() => {
     const normalizedQuery = query.trim().toLocaleLowerCase();
@@ -129,7 +140,7 @@ export function ProjectTracking() {
     try {
       const result = await requestJson<{ created: boolean }>("/api/projects/initialize", { method: "POST" });
       setNotice(result.created ? "ProjectTracking.xlsx was created in OneDrive and verified." : "The existing ProjectTracking.xlsx was checked and verified.");
-      await loadProjects();
+      await refreshProjectRelatedData();
     } catch (cause) { setError(cause instanceof Error ? cause.message : "Could not initialize the OneDrive workbook."); }
     finally { setBusy(false); }
   }
@@ -148,7 +159,7 @@ export function ProjectTracking() {
         method: isCreate ? "POST" : "PATCH", body: JSON.stringify(payload),
       });
       setProjectEditor(null);
-      await loadProjects();
+      await refreshProjectRelatedData();
       setSelectedId(saved.projectId);
       setNotice(`${saved.projectName} was saved to OneDrive.`);
     } catch (cause) { setError(cause instanceof Error ? cause.message : "Could not save the project."); }
@@ -160,7 +171,7 @@ export function ProjectTracking() {
     setBusy(true); setError(""); setNotice("");
     try {
       await requestJson<Project>(`/api/projects/${encodeURIComponent(selectedProject.projectId)}`, { method: "PATCH", body: JSON.stringify({ action: "archive" }) });
-      await loadProjects();
+      await refreshProjectRelatedData();
       setNotice(`${selectedProject.projectName} was archived in OneDrive.`);
     } catch (cause) { setError(cause instanceof Error ? cause.message : "Could not archive the project."); }
     finally { setBusy(false); }
@@ -173,7 +184,8 @@ export function ProjectTracking() {
     try {
       const result = await requestJson<{ deleted: boolean }>(`/api/projects/${encodeURIComponent(selectedProject.projectId)}`, { method: "DELETE" });
       if (!result.deleted) throw new Error("OneDrive did not confirm project deletion.");
-      setProjects((current) => current.filter((project) => project.projectId !== selectedProject.projectId));
+      queryClient.setQueryData<{ initialized: boolean; projects: Project[] }>(queryKeys.projects, (current) => current ? { ...current, projects: current.projects.filter((project) => project.projectId !== selectedProject.projectId) } : current);
+      await refreshProjectRelatedData();
       setSelectedId((current) => current === selectedProject.projectId ? null : current);
       setProjectEditor(null);
       setNotice(`${selectedProject.projectName} was deleted from OneDrive and confirmed by readback.`);

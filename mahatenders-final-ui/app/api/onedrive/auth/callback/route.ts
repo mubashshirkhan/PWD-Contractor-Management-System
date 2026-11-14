@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { GRAPH_SCOPES, isValidOneDriveRedirectUri, readOneDriveConfig } from "@/lib/onedrive/config";
 import { cookieOptions, oauthCookieName, openOAuthTransaction, sessionCookieName } from "@/lib/onedrive/cookies";
 import { createOneDriveMsalClient } from "@/lib/onedrive/msal";
+import { getTokenCacheStore } from "@/lib/onedrive/token-cache";
 
 export const runtime = "nodejs";
 
@@ -33,6 +34,10 @@ export async function GET(request: NextRequest) {
       nonce: transaction.nonce,
     });
     if (!result?.account) return finish(request, "error");
+
+    if (transaction.previousSessionId && transaction.previousSessionId !== transaction.sessionId) {
+      await getTokenCacheStore().delete(transaction.previousSessionId).catch(() => undefined);
+    }
 
     const response = finish(request, "connected");
     response.cookies.set(sessionCookieName(), transaction.sessionId, cookieOptions(60 * 60 * 24 * 30));

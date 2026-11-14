@@ -1,6 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { queryKeys } from "@/lib/query-keys";
 import { FilePlus2, Pencil, RefreshCw, Save, Trash2, X } from "lucide-react";
 import { SectionHeader } from "@/components/section-header";
 
@@ -24,16 +26,31 @@ function inr(value: number) { return new Intl.NumberFormat("en-IN", { style: "cu
 async function responseJson<T>(response: Response): Promise<T> { const body = await response.json().catch(() => ({})); if (!response.ok) throw new Error(typeof body.error === "string" ? body.error : `Request failed (${response.status}).`); return body as T; }
 
 export function PaymentsExpenses() {
-  const [data, setData] = useState<Data | null>(null); const [loading, setLoading] = useState(true); const [busy, setBusy] = useState(false); const [error, setError] = useState(""); const [notice, setNotice] = useState(""); const [query, setQuery] = useState(""); const [typeFilter, setTypeFilter] = useState("All types"); const [dateFrom, setDateFrom] = useState(""); const [dateTo, setDateTo] = useState(""); const [selectedId, setSelectedId] = useState<string | null>(null); const [formOpen, setFormOpen] = useState(false); const [editing, setEditing] = useState(false); const [draft, setDraft] = useState<Draft>(emptyDraft());
-  const load = useCallback(async () => { setLoading(true); setError(""); try { const result = await responseJson<Data>(await fetch("/api/payments", { cache: "no-store" })); setData(result); setSelectedId((id) => id && result.transactions.some((transaction) => transaction.transactionId === id) ? id : result.transactions[0]?.transactionId ?? null); } catch (cause) { setError(cause instanceof Error ? cause.message : "Could not load transactions from OneDrive."); } finally { setLoading(false); } }, []);
-  useEffect(() => { void load(); }, [load]);
+  const queryClient = useQueryClient();
+  const paymentsQuery = useQuery({ queryKey: queryKeys.payments, queryFn: async () => responseJson<Data>(await fetch("/api/payments", { cache: "no-store" })) });
+  const data = paymentsQuery.data ?? null;
+  const loading = paymentsQuery.isPending;
+  const [busy, setBusy] = useState(false); const [error, setError] = useState(""); const [notice, setNotice] = useState(""); const [query, setQuery] = useState(""); const [typeFilter, setTypeFilter] = useState("All types"); const [dateFrom, setDateFrom] = useState(""); const [dateTo, setDateTo] = useState(""); const [selectedId, setSelectedId] = useState<string | null>(null); const [formOpen, setFormOpen] = useState(false); const [editing, setEditing] = useState(false); const [draft, setDraft] = useState<Draft>(emptyDraft());
+  useEffect(() => {
+    if (data) setSelectedId((id) => id && data.transactions.some((transaction) => transaction.transactionId === id) ? id : data.transactions[0]?.transactionId ?? null);
+    if (paymentsQuery.error instanceof Error) setError(paymentsQuery.error.message);
+  }, [data, paymentsQuery.error]);
+  const load = () => paymentsQuery.refetch();
+  async function refreshPaymentRelatedData() {
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: queryKeys.payments, refetchType: "none" }),
+      queryClient.invalidateQueries({ queryKey: queryKeys.reports, refetchType: "none" }),
+      queryClient.invalidateQueries({ queryKey: queryKeys.dashboard, refetchType: "none" }),
+    ]);
+    await paymentsQuery.refetch();
+  }
   const selected = data?.transactions.find((transaction) => transaction.transactionId === selectedId) ?? null;
   const filtered = useMemo(() => { const search = query.trim().toLowerCase(); return (data?.transactions ?? []).filter((transaction) => (typeFilter === "All types" || transaction.type === typeFilter) && (!dateFrom || transaction.date >= dateFrom) && (!dateTo || transaction.date <= dateTo) && (!search || transaction.description.toLowerCase().includes(search) || (transaction.projectName ?? "General transaction").toLowerCase().includes(search))); }, [data, query, typeFilter, dateFrom, dateTo]);
   function create() { setDraft(emptyDraft()); setEditing(false); setFormOpen(true); }
   function edit(transaction: Transaction) { setDraft(draftFrom(transaction)); setEditing(true); setFormOpen(true); }
-  async function save(event: React.FormEvent) { event.preventDefault(); if (!data) return; setBusy(true); setError(""); setNotice(""); try { const payload = { ...draft, projectId: draft.projectId || null, amount: Number(draft.amount), paymentMethod: draft.paymentMethod || null, remarks: draft.remarks || null }; const response = await fetch(editing && selected ? `/api/payments/${encodeURIComponent(selected.transactionId)}` : "/api/payments", { method: editing ? "PATCH" : "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) }); const saved = await responseJson<Transaction>(response); setFormOpen(false); await load(); setSelectedId(saved.transactionId); setNotice("Transaction saved and confirmed in OneDrive."); } catch (cause) { setError(cause instanceof Error ? cause.message : "Transaction could not be saved."); } finally { setBusy(false); } }
-  async function initialize() { setBusy(true); setError(""); setNotice(""); try { await responseJson(await fetch("/api/payments/initialize", { method: "POST" })); await load(); setNotice("PaymentsExpenses.xlsx is ready in OneDrive."); } catch (cause) { setError(cause instanceof Error ? cause.message : "Workbook could not be initialized."); } finally { setBusy(false); } }
-  async function remove(transaction: Transaction) { if (!window.confirm(`Delete this ${transaction.type.toLowerCase()} transaction for ${inr(transaction.amount)}?`)) return; setBusy(true); setError(""); setNotice(""); try { await responseJson(await fetch(`/api/payments/${encodeURIComponent(transaction.transactionId)}`, { method: "DELETE" })); await load(); setNotice("Transaction deleted and confirmed in OneDrive."); } catch (cause) { setError(cause instanceof Error ? cause.message : "Transaction could not be deleted."); } finally { setBusy(false); } }
+  async function save(event: React.FormEvent) { event.preventDefault(); if (!data) return; setBusy(true); setError(""); setNotice(""); try { const payload = { ...draft, projectId: draft.projectId || null, amount: Number(draft.amount), paymentMethod: draft.paymentMethod || null, remarks: draft.remarks || null }; const response = await fetch(editing && selected ? `/api/payments/${encodeURIComponent(selected.transactionId)}` : "/api/payments", { method: editing ? "PATCH" : "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) }); const saved = await responseJson<Transaction>(response); setFormOpen(false); await refreshPaymentRelatedData(); setSelectedId(saved.transactionId); setNotice("Transaction saved and confirmed in OneDrive."); } catch (cause) { setError(cause instanceof Error ? cause.message : "Transaction could not be saved."); } finally { setBusy(false); } }
+  async function initialize() { setBusy(true); setError(""); setNotice(""); try { await responseJson(await fetch("/api/payments/initialize", { method: "POST" })); await refreshPaymentRelatedData(); setNotice("PaymentsExpenses.xlsx is ready in OneDrive."); } catch (cause) { setError(cause instanceof Error ? cause.message : "Workbook could not be initialized."); } finally { setBusy(false); } }
+  async function remove(transaction: Transaction) { if (!window.confirm(`Delete this ${transaction.type.toLowerCase()} transaction for ${inr(transaction.amount)}?`)) return; setBusy(true); setError(""); setNotice(""); try { await responseJson(await fetch(`/api/payments/${encodeURIComponent(transaction.transactionId)}`, { method: "DELETE" })); await refreshPaymentRelatedData(); setNotice("Transaction deleted and confirmed in OneDrive."); } catch (cause) { setError(cause instanceof Error ? cause.message : "Transaction could not be deleted."); } finally { setBusy(false); } }
   const update = (key: keyof Draft, value: string) => setDraft((current) => ({ ...current, [key]: value }));
   const totals = data?.initialized ? data.totals : null;
   const summary = [["Total Received", totals ? inr(totals.totalReceived) : "—"], ["Total Expenses", totals ? inr(totals.totalExpenses) : "—"], ["Total Paid", totals ? inr(totals.totalPaid) : "—"], ["Remaining Balance", totals ? inr(totals.remainingBalance) : "—"]];
