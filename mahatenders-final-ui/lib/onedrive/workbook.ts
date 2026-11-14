@@ -68,7 +68,14 @@ function tableOnWorksheet(worksheet: Worksheet, tableName: string): Table {
   return table;
 }
 
-type MutableTableModel = { ref?: string; tableRef?: string; rows?: CellValue[][]; columns: Array<{ name: string }> };
+type MutableTableModel = {
+  ref?: string;
+  tableRef?: string;
+  headerRow?: boolean;
+  totalsRow?: boolean;
+  rows?: CellValue[][];
+  columns: Array<{ name: string }>;
+};
 
 function tableModel(table: Table): MutableTableModel {
   return (table as Table & { model: MutableTableModel }).model;
@@ -88,11 +95,21 @@ function parseCellAddress(address: string): { row: number; column: number } {
 function hydrateTableRows(worksheet: Worksheet, table: Table): { startRow: number; startColumn: number; endRow: number } {
   const model = tableModel(table);
   const range = model.tableRef?.split(":") ?? [table.ref];
+  const anchor = parseCellAddress(model.ref || range[0]);
+  const worksheetHasTableHeaders = tableColumns(table).every((column, index) =>
+    worksheet.getCell(anchor.row, anchor.column + index).value === column.name,
+  );
+  // Excel's default is a header row and no totals row. ExcelJS applies these
+  // defaults when creating tables, but may parse an omitted headerRowCount as
+  // false for tables imported from Excel. Our structured tables also require
+  // their declared column names in the first row, so detect that case directly.
+  if (model.headerRow === undefined || (!model.headerRow && worksheetHasTableHeaders)) model.headerRow = true;
+  if (model.totalsRow === undefined) model.totalsRow = false;
   // ExcelJS restores tableRef and tl from downloaded workbooks, but may omit
   // the ref field used by its mutation helpers. Restore the anchor before any
   // add/remove operation so commit() can update the table range safely.
   if (!model.ref) model.ref = range[0];
-  const start = parseCellAddress(model.ref || range[0]);
+  const start = anchor;
   const end = parseCellAddress(range[range.length - 1]);
   const firstDataRow = start.row + (table.headerRow ? 1 : 0);
   const lastDataRow = end.row - (table.totalsRow ? 1 : 0);

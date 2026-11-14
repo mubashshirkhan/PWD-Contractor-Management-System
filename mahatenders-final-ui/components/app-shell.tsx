@@ -1,12 +1,14 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { usePathname } from "next/navigation";
 import {
   BarChart3,
   Calculator,
   ClipboardList,
   FolderKanban,
+  House,
   ReceiptIndianRupee,
   Search,
 } from "lucide-react";
@@ -15,11 +17,12 @@ import { cn } from "@/lib/utils";
 import { OneDriveConnectionStatus } from "@/components/onedrive-connection-status";
 
 const operations: Array<{ label: string; href: string; icon: LucideIcon }> = [
+  { label: "Dashboard", href: "/", icon: House },
   { label: "Project Tracking", href: "/projects", icon: FolderKanban },
   { label: "Tender Search", href: "/tender-search", icon: Search },
-  { label: "Payments & Expenses", href: "/payments", icon: ReceiptIndianRupee },
   { label: "BOQ Calculator", href: "/boq-calculator", icon: Calculator },
   { label: "Work Orders", href: "/work-orders", icon: ClipboardList },
+  { label: "Payments & Expenses", href: "/payments", icon: ReceiptIndianRupee },
   { label: "Reports", href: "/reports", icon: BarChart3 },
 ];
 
@@ -30,7 +33,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       <aside className="fixed inset-y-0 left-0 z-20 hidden w-64 flex-col border-r border-white/10 bg-navy text-white lg:flex">
         <div className="px-5 pb-5 pt-7">
           <Link href="/" className="flex items-center gap-3">
-            <span className="grid h-10 w-10 place-items-center rounded-lg border border-white/20 bg-copper text-xs font-semibold tracking-wide">AD</span>
+            <span className="grid h-10 w-10 shrink-0 place-items-center overflow-hidden rounded-lg border border-white/20 bg-[#f4efe6] p-1"><Image src="/arch-design-studio-mark.png" alt="Arch Design Studio logo" width={40} height={40} className="h-full w-full object-contain" priority /></span>
             <span><strong className="block font-serif text-lg font-normal">Arch Design Studio</strong><small className="text-[11px] text-slate-300">Contract management</small></span>
           </Link>
         </div>
@@ -39,14 +42,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           {operations.map((item) => <NavItem key={item.href} item={item} active={pathname === item.href} />)}
         </nav>
         <div className="border-t border-white/10 px-5 py-5 text-xs leading-5 text-slate-300">
-          <div className="flex items-center gap-2 text-emerald-300"><span className="h-2 w-2 rounded-full bg-emerald-300" /> API configured</div>
-          <p className="mt-2">Live records remain separate from planned modules.</p>
           <OneDriveConnectionStatus />
         </div>
       </aside>
       <div className="lg:pl-64">
         <header className="sticky top-0 z-10 flex h-16 items-center border-b border-line bg-canvas/95 px-5 backdrop-blur lg:px-10">
-          <Link href="/" className="flex items-center gap-2 lg:hidden"><span className="grid h-8 w-8 place-items-center rounded bg-copper text-[10px] font-semibold text-white">AD</span><span className="font-serif text-lg">Arch Design Studio</span></Link>
+          <Link href="/" className="flex items-center gap-2 lg:hidden"><span className="grid h-8 w-8 shrink-0 place-items-center overflow-hidden rounded border border-line bg-[#f4efe6] p-0.5"><Image src="/arch-design-studio-mark.png" alt="Arch Design Studio logo" width={32} height={32} className="h-full w-full object-contain" priority /></span><span className="font-serif text-lg">Arch Design Studio</span></Link>
           <p className="hidden text-sm text-muted lg:block">Project operations workspace</p>
         </header>
         <main className="mx-auto max-w-[1480px] px-5 py-8 lg:px-10 lg:py-10">{children}</main>

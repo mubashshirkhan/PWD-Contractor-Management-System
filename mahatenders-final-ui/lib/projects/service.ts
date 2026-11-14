@@ -6,6 +6,7 @@ import {
   addTableRecord,
   createStructuredTable,
   createWorksheet,
+  deleteTableRecord,
   openWorkbook,
   readTableRecords,
   serializeWorkbook,
@@ -36,6 +37,7 @@ import {
   PROJECT_TABLE,
   PROJECT_WORKBOOK,
   ProjectValidationError,
+  milestoneProgressState,
   validateMilestoneInput,
   validateProjectInput,
   type MilestoneInput,
@@ -78,9 +80,16 @@ function normalizeCellText(value: CellValue): string | null {
   return String(value).trim() || null;
 }
 
-function normalizeStatus<T extends string>(value: CellValue, allowed: readonly T[], label: string): T {
+function normalizeStatus<T extends string>(value: CellValue, allowed: readonly T[], label: string, emptyFallback?: T): T {
   const text = normalizeCellText(value);
-  if (text && allowed.includes(text as T)) return text as T;
+  if (!text && emptyFallback) return emptyFallback;
+  if (text) {
+    const normalized = allowed.find((status) => status.toLocaleLowerCase() === text.toLocaleLowerCase());
+    if (normalized) return normalized;
+    const legacy = text.toLocaleLowerCase();
+    if (legacy === "not started" && allowed.includes("Pending" as T)) return "Pending" as T;
+    if ((legacy === "done" || legacy === "complete") && allowed.includes("Completed" as T)) return "Completed" as T;
+  }
   throw new ProjectWorkbookSchemaError(`The stored ${label} value is not recognized.`);
 }
 
@@ -114,10 +123,9 @@ function milestoneFromRow(row: WorkbookRecord, today: string): MilestoneRecord {
   if (!row.MilestoneId || !row.ProjectId || !row.Title || !plannedDate) {
     throw new ProjectWorkbookSchemaError("A stored milestone is missing its ID, project ID, title, or planned date.");
   }
-  const status = normalizeStatus(row.Status as CellValue, MILESTONE_STATUSES, "milestone status");
+  const status = normalizeStatus(row.Status as CellValue, MILESTONE_STATUSES, "milestone status", "Pending");
   const actualDate = normalizeCellText(row.ActualDate as CellValue);
-  const complete = status === "Completed" || Boolean(actualDate);
-  const delayed = !complete && plannedDate < today;
+  const progress = milestoneProgressState(status, actualDate, plannedDate, today);
   return {
     milestoneId: String(row.MilestoneId),
     projectId: String(row.ProjectId),
@@ -125,7 +133,7 @@ function milestoneFromRow(row: WorkbookRecord, today: string): MilestoneRecord {
     plannedDate,
     actualDate,
     status,
-    displayStatus: delayed ? "Delayed" : status,
+    displayStatus: progress.displayStatus,
     remarks: normalizeCellText(row.Remarks as CellValue),
     createdAt: normalizeCellText(row.CreatedAt as CellValue) ?? "",
     updatedAt: normalizeCellText(row.UpdatedAt as CellValue) ?? "",
@@ -136,7 +144,12 @@ function projectFromRows(row: WorkbookRecord, milestones: MilestoneRecord[], tod
   if (!row.ProjectId || !row.ProjectName) throw new ProjectWorkbookSchemaError("A stored project is missing its ID or name.");
   const status = normalizeStatus(row.Status as CellValue, PROJECT_STATUSES, "project status");
   const projectMilestones = milestones.filter((milestone) => milestone.projectId === String(row.ProjectId));
-  const completed = projectMilestones.filter((milestone) => milestone.status === "Completed" || Boolean(milestone.actualDate)).length;
+  const completed = projectMilestones.filter((milestone) => milestoneProgressState(
+    milestone.status,
+    milestone.actualDate,
+    milestone.plannedDate,
+    today,
+  ).completed).length;
   const delayed = projectMilestones.filter((milestone) => milestone.displayStatus === "Delayed").length;
   const pending = projectMilestones.length - completed - delayed;
   return {
@@ -369,8 +382,29 @@ export async function updateProject(sessionId: string, projectId: string, rawInp
   const worksheet = current.workbook.getWorksheet(PROJECT_SHEET)!;
   const changed = updateTableRecord(worksheet, PROJECT_TABLE, "ProjectId", projectId, projectToRow(updated));
   if (!changed) return null;
-  const persisted = await persistExisting(sessionId, current.item, current.workbook);
-  return projectRowsToRecords(persisted).find((project) => project.projectId === projectId) ?? null;
+  try {
+    const persisted = await persistExisting(sessionId, current.item, current.workbook);
+    return projectRowsToRecords(persisted).find((project) => project.projectId === projectId) ?? null;
+  } catch (error) {
+    if (!(error instanceof OneDriveConflictError)) throw error;
+
+    // Rebase once when another write changed the workbook but not any field
+    // this PATCH intends to change. This preserves unrelated concurrent edits.
+    const latest = await loadWorkbook(sessionId);
+    if (!latest.workbook || !latest.item) throw error;
+    validateSchema(latest.workbook);
+    const latestProject = projectRowsToRecords(latest.workbook).find((project) => project.projectId === projectId);
+    if (!latestProject) throw error;
+    const patchedFields = Object.keys(input) as Array<keyof ProjectInput>;
+    const overlappingChanges = patchedFields.some((field) => !Object.is(existing[field], latestProject[field]));
+    if (overlappingChanges) throw error;
+
+    const rebased = applyProjectInput(latestProject, input, new Date().toISOString(), projectId);
+    const latestWorksheet = latest.workbook.getWorksheet(PROJECT_SHEET)!;
+    if (!updateTableRecord(latestWorksheet, PROJECT_TABLE, "ProjectId", projectId, projectToRow(rebased))) throw error;
+    const persisted = await persistExisting(sessionId, latest.item, latest.workbook);
+    return projectRowsToRecords(persisted).find((project) => project.projectId === projectId) ?? null;
+  }
 }
 
 export async function archiveProject(sessionId: string, projectId: string): Promise<ProjectRecord | null> {
@@ -391,6 +425,34 @@ export async function archiveProject(sessionId: string, projectId: string): Prom
     return projectRowsToRecords(persisted).find((project) => project.projectId === projectId) ?? null;
   }
   return existing;
+}
+
+export async function deleteProject(sessionId: string, projectId: string): Promise<boolean> {
+  const current = await loadWorkbook(sessionId);
+  if (!current.workbook || !current.item) throw new ProjectWorkbookNotInitializedError();
+  validateSchema(current.workbook);
+  const projects = projectRowsToRecords(current.workbook);
+  if (!projects.some((project) => project.projectId === projectId)) return false;
+
+  const milestoneSheet = current.workbook.getWorksheet(MILESTONE_SHEET)!;
+  const linkedMilestones = readMilestoneRows(current.workbook)
+    .filter((row) => String(row.ProjectId ?? "") === projectId)
+    .map((row) => String(row.MilestoneId ?? ""))
+    .filter(Boolean);
+  for (const milestoneId of linkedMilestones) {
+    if (!deleteTableRecord(milestoneSheet, MILESTONE_TABLE, "MilestoneId", milestoneId)) {
+      throw new ProjectWorkbookSchemaError("A linked milestone could not be removed; the project workbook was not saved.");
+    }
+  }
+
+  const projectSheet = current.workbook.getWorksheet(PROJECT_SHEET)!;
+  if (!deleteTableRecord(projectSheet, PROJECT_TABLE, "ProjectId", projectId)) return false;
+  const persisted = await persistExisting(sessionId, current.item, current.workbook);
+  const remainingProjects = projectRowsToRecords(persisted);
+  if (remainingProjects.some((project) => project.projectId === projectId) || readMilestoneRows(persisted).some((row) => String(row.ProjectId ?? "") === projectId)) {
+    throw new Error("Microsoft Graph did not confirm project deletion on readback.");
+  }
+  return true;
 }
 
 export async function addProjectMilestone(sessionId: string, projectId: string, rawInput: unknown): Promise<MilestoneRecord> {

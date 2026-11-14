@@ -21,6 +21,18 @@ export const MILESTONE_COLUMNS = [
 export type ProjectStatus = typeof PROJECT_STATUSES[number];
 export type MilestoneStatus = typeof MILESTONE_STATUSES[number];
 
+export function milestoneProgressState(
+  status: MilestoneStatus,
+  actualDate: string | null,
+  plannedDate: string,
+  today: string,
+): { completed: boolean; displayStatus: MilestoneStatus | "Delayed" } {
+  const completed = status === "Completed" && (!actualDate || actualDate <= today);
+  const delayed = !completed && plannedDate < today;
+  const displayStatus = delayed ? "Delayed" : status === "Completed" && !completed ? "In Progress" : status;
+  return { completed, displayStatus };
+}
+
 export type ProjectInput = {
   projectName?: string;
   clientDepartment?: string | null;

@@ -1,0 +1,8 @@
+import { NextRequest, NextResponse } from "next/server";
+import { projectSessionId, rejectCrossOriginWrite } from "@/lib/projects/http";
+import { deleteTransaction, updateTransaction } from "@/lib/payments/service";
+import { paymentsApiError, readTransactionBody } from "@/lib/payments/http";
+export const runtime = "nodejs";
+type Context = { params: Promise<{ transactionId: string }> };
+export async function PATCH(request: NextRequest, context: Context) { const originError = rejectCrossOriginWrite(request); if (originError) return originError; const sessionId = projectSessionId(request); if (!sessionId) return NextResponse.json({ error: "Connect OneDrive to edit transactions." }, { status: 401 }); try { const { transactionId } = await context.params; const updated = await updateTransaction(sessionId, transactionId, await readTransactionBody(request)); return updated ? NextResponse.json(updated, { headers: { "Cache-Control": "no-store" } }) : NextResponse.json({ error: "Transaction not found." }, { status: 404 }); } catch (error) { return paymentsApiError(error); } }
+export async function DELETE(request: NextRequest, context: Context) { const originError = rejectCrossOriginWrite(request); if (originError) return originError; const sessionId = projectSessionId(request); if (!sessionId) return NextResponse.json({ error: "Connect OneDrive to delete transactions." }, { status: 401 }); try { const { transactionId } = await context.params; return await deleteTransaction(sessionId, transactionId) ? new NextResponse(null, { status: 204 }) : NextResponse.json({ error: "Transaction not found." }, { status: 404 }); } catch (error) { return paymentsApiError(error); } }

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { projectApiError, projectSessionId, readJsonBody, rejectCrossOriginWrite } from "@/lib/projects/http";
-import { archiveProject, getProject, updateProject } from "@/lib/projects/service";
+import { archiveProject, deleteProject, getProject, updateProject } from "@/lib/projects/service";
 
 export const runtime = "nodejs";
 type Context = { params: Promise<{ projectId: string }> };
@@ -31,6 +31,20 @@ export async function PATCH(request: NextRequest, { params }: Context) {
     }
     const project = await updateProject(sessionId, projectId, body);
     return project ? NextResponse.json(project, { headers: { "Cache-Control": "no-store" } }) : NextResponse.json({ error: "Project not found." }, { status: 404 });
+  } catch (error) {
+    return projectApiError(error);
+  }
+}
+
+export async function DELETE(request: NextRequest, { params }: Context) {
+  const originError = rejectCrossOriginWrite(request);
+  if (originError) return originError;
+  const sessionId = projectSessionId(request);
+  if (!sessionId) return NextResponse.json({ error: "Connect OneDrive to delete projects." }, { status: 401 });
+  try {
+    const { projectId } = await params;
+    const deleted = await deleteProject(sessionId, projectId);
+    return deleted ? NextResponse.json({ deleted: true }, { headers: { "Cache-Control": "no-store" } }) : NextResponse.json({ error: "Project not found." }, { status: 404 });
   } catch (error) {
     return projectApiError(error);
   }
