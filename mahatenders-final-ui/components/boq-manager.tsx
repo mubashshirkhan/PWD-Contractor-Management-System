@@ -4,6 +4,8 @@ import { useEffect, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { queryKeys } from "@/lib/query-keys";
 import { Copy, Download, FilePlus2, Pencil, Printer, RefreshCw, Save, Trash2 } from "lucide-react";
+import { downloadFileResponse } from "@/lib/browser-download";
+import { printElement } from "@/lib/browser-print";
 
 type BoqStatus = "Draft" | "Finalized";
 type ProjectOption = { projectId: string; projectName: string };
@@ -191,10 +193,7 @@ export function BoqManager() {
     setBusy(true); setError("");
     try {
       const response = await fetch(`/api/boq/${encodeURIComponent(selected.boqId)}/export`, { cache: "no-store" });
-      if (!response.ok) throw new Error(await response.text().catch(() => "Excel export failed."));
-      const blob = await response.blob();
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement("a"); link.href = url; link.download = `${selected.boqNumber}.xlsx`; link.click(); URL.revokeObjectURL(url);
+      await downloadFileResponse(response, `${selected.boqNumber}.xlsx`);
     } catch (cause) { setError(cause instanceof Error ? cause.message : "Excel export failed."); }
     finally { setBusy(false); }
   }
@@ -247,11 +246,10 @@ export function BoqManager() {
 
                 <Totals subtotal={calculations.subtotal} tax={calculations.taxAmount} charges={calculations.additionalCharges} discount={calculations.discountAmount} total={calculations.grandTotal} />
                 <div className="mt-5 flex flex-wrap justify-end gap-2"><button className={secondaryClass} type="button" disabled={busy} onClick={() => void save("Draft")}><Save className="h-4 w-4" /> Save draft</button><button className={buttonClass} type="button" disabled={busy} onClick={() => void save("Finalized")}>{busy ? "Saving…" : "Save and finalize"}</button></div>
-              </section> : selected ? <section className="rounded-xl border border-line bg-white p-5 shadow-sm"><div className="no-print flex flex-wrap items-start justify-between gap-3"><div><p className="text-xs font-semibold uppercase tracking-[0.16em] text-copper">{selected.boqNumber} · {selected.status}</p><h2 className="mt-1 font-serif text-2xl text-ink">{selected.title}</h2><p className="mt-1 text-sm text-muted">{selected.projectName} · {selected.boqDate}</p></div><div className="flex flex-wrap gap-2"><button className={secondaryClass} type="button" disabled={busy} onClick={() => void exportExcel()}><Download className="h-4 w-4" /> Excel</button><button className={secondaryClass} type="button" onClick={() => window.print()}><Printer className="h-4 w-4" /> Print</button><button className={secondaryClass} type="button" disabled={busy} onClick={() => void act("duplicate")}><Copy className="h-4 w-4" /> Duplicate</button>{selected.status === "Finalized" ? <button className={secondaryClass} type="button" disabled={busy} onClick={() => void act("reopen")}><RefreshCw className="h-4 w-4" /> Reopen</button> : <button className={secondaryClass} type="button" disabled={busy} onClick={beginEdit}><Pencil className="h-4 w-4" /> Edit</button>}<button className={`${secondaryClass} text-danger`} type="button" disabled={busy} onClick={() => void remove()}><Trash2 className="h-4 w-4" /> Delete</button></div></div><BoqPrintView boq={selected} /></section> : <section className="rounded-xl border border-dashed border-line bg-white p-10 text-center"><h2 className="font-serif text-2xl text-ink">Select a saved BOQ or start a new one</h2><p className="mt-2 text-sm text-muted">Saved BOQs are loaded from the OneDrive workbook.</p><button className={`${buttonClass} mt-5`} type="button" onClick={beginNew}><FilePlus2 className="h-4 w-4" /> New BOQ</button></section>}
+              </section> : selected ? <section className="rounded-xl border border-line bg-white p-5 shadow-sm"><div className="no-print flex flex-wrap items-start justify-between gap-3"><div><p className="text-xs font-semibold uppercase tracking-[0.16em] text-copper">{selected.boqNumber} · {selected.status}</p><h2 className="mt-1 font-serif text-2xl text-ink">{selected.title}</h2><p className="mt-1 text-sm text-muted">{selected.projectName} · {selected.boqDate}</p></div><div className="flex flex-wrap gap-2"><button className={secondaryClass} type="button" disabled={busy} onClick={() => void exportExcel()}><Download className="h-4 w-4" /> Excel</button><button className={secondaryClass} type="button" onClick={() => printElement("boq-print-area")}><Printer className="h-4 w-4" /> Print</button><button className={secondaryClass} type="button" disabled={busy} onClick={() => void act("duplicate")}><Copy className="h-4 w-4" /> Duplicate</button>{selected.status === "Finalized" ? <button className={secondaryClass} type="button" disabled={busy} onClick={() => void act("reopen")}><RefreshCw className="h-4 w-4" /> Reopen</button> : <button className={secondaryClass} type="button" disabled={busy} onClick={beginEdit}><Pencil className="h-4 w-4" /> Edit</button>}<button className={`${secondaryClass} text-danger`} type="button" disabled={busy} onClick={() => void remove()}><Trash2 className="h-4 w-4" /> Delete</button></div></div><BoqPrintView boq={selected} /></section> : <section className="rounded-xl border border-dashed border-line bg-white p-10 text-center"><h2 className="font-serif text-2xl text-ink">Select a saved BOQ or start a new one</h2><p className="mt-2 text-sm text-muted">Saved BOQs are loaded from the OneDrive workbook.</p><button className={`${buttonClass} mt-5`} type="button" onClick={beginNew}><FilePlus2 className="h-4 w-4" /> New BOQ</button></section>}
               <p className="no-print px-1 text-xs text-muted">Records are saved to OneDrive. Save confirmations are shown only after Graph readback succeeds.</p>
             </div>
           </div>
-          <style jsx global>{`@media print { body * { visibility: hidden !important; } #boq-print-area, #boq-print-area * { visibility: visible !important; } #boq-print-area { position: absolute; inset: 0; width: 100%; padding: 0; box-shadow: none; border: 0; } .no-print { display: none !important; } @page { margin: 12mm; } }`}</style>
         </>
       )}
     </div>

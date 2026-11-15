@@ -26,3 +26,185 @@ button, input, select { font: inherit; }
   }
   .data-table tr:last-child td { @apply border-b-0; }
 }
+
+@media print {
+  @page { size: A4 portrait; margin: 0; }
+
+  html,
+  body {
+    min-height: auto !important;
+    background: #fff !important;
+    color: #000 !important;
+    font-family: Arial, Helvetica, sans-serif !important;
+    font-size: 10pt !important;
+  }
+
+  html[data-print-target] body * {
+    visibility: hidden !important;
+  }
+
+  html[data-print-target="boq-print-area"] #boq-print-area,
+  html[data-print-target="boq-print-area"] #boq-print-area *,
+  html[data-print-target="work-order-print-area"] #work-order-print-area,
+  html[data-print-target="work-order-print-area"] #work-order-print-area *,
+  html[data-print-target="report-print-area"] #report-print-area,
+  html[data-print-target="report-print-area"] #report-print-area * {
+    visibility: visible !important;
+  }
+
+  #boq-print-area,
+  #work-order-print-area,
+  #report-print-area {
+    position: absolute !important;
+    top: 0 !important;
+    left: 0 !important;
+    width: 210mm !important;
+    max-width: 210mm !important;
+    margin: 0 !important;
+    padding: 12mm !important;
+    box-sizing: border-box !important;
+    overflow: visible !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+    background: #fff !important;
+    box-shadow: none !important;
+    color: #000 !important;
+    font-family: Arial, Helvetica, sans-serif !important;
+    font-size: 10pt !important;
+    line-height: 1.4 !important;
+  }
+
+  #boq-print-area *,
+  #work-order-print-area *,
+  #report-print-area * {
+    color: #000 !important;
+    background-color: transparent !important;
+    box-shadow: none !important;
+    text-shadow: none !important;
+    -webkit-print-color-adjust: economy !important;
+    print-color-adjust: economy !important;
+  }
+
+  #boq-print-area > div:first-child,
+  #report-print-area > div:first-child {
+    border-bottom: 1px dashed #000 !important;
+    padding-bottom: 10pt !important;
+    margin-bottom: 12pt !important;
+  }
+
+  #boq-print-area h2,
+  #work-order-print-area h2,
+  #report-print-area h1,
+  #report-print-area h2 {
+    color: #000 !important;
+    font-family: Arial, Helvetica, sans-serif !important;
+    font-size: 16pt !important;
+    font-weight: 700 !important;
+    letter-spacing: 0 !important;
+  }
+
+  #boq-print-area table,
+  #report-print-area table {
+    border: 1px solid #000 !important;
+  }
+
+  #boq-print-area th,
+  #boq-print-area td,
+  #report-print-area th,
+  #report-print-area td {
+    border: 1px solid #000 !important;
+    padding: 5pt !important;
+    color: #000 !important;
+    background: #fff !important;
+  }
+
+  #boq-print-area dl,
+  #work-order-print-area dl {
+    border-top: 1px dashed #000 !important;
+  }
+
+  #boq-print-area dl > div,
+  #work-order-print-area dl > div {
+    border-bottom: 1px dashed #000 !important;
+    padding: 6pt 0 !important;
+  }
+
+  #work-order-print-area dl {
+    display: block !important;
+  }
+
+  #work-order-print-area dl > div {
+    display: flex !important;
+    justify-content: space-between !important;
+    gap: 12pt !important;
+  }
+
+  #work-order-print-area dt {
+    font-size: 9pt !important;
+    font-weight: 700 !important;
+    text-transform: uppercase !important;
+  }
+
+  #work-order-print-area dd {
+    margin: 0 !important;
+    text-align: right !important;
+  }
+
+  #boq-print-area .data-table th {
+    font-size: 8pt !important;
+    font-weight: 700 !important;
+    text-transform: uppercase !important;
+  }
+
+  #boq-print-area .data-table td,
+  #report-print-area td {
+    font-size: 9pt !important;
+  }
+
+  #report-print-area > section:last-of-type {
+    border: 0 !important;
+    padding: 0 !important;
+  }
+
+  #report-print-area > section:last-of-type h2 {
+    font-size: 11pt !important;
+    text-transform: uppercase !important;
+  }
+
+  #boq-print-area .border-line,
+  #work-order-print-area .border-line,
+  #report-print-area .border-line {
+    border-color: #000 !important;
+  }
+
+  #boq-print-area svg,
+  #work-order-print-area svg,
+  #report-print-area svg {
+    display: none !important;
+  }
+
+  #boq-print-area .overflow-x-auto,
+  #report-print-area .overflow-x-auto {
+    overflow: visible !important;
+  }
+
+  #boq-print-area table,
+  #report-print-area table {
+    width: 100% !important;
+    min-width: 0 !important;
+    border-collapse: collapse;
+  }
+
+  #boq-print-area thead,
+  #report-print-area thead {
+    display: table-header-group;
+  }
+
+  #boq-print-area tr,
+  #report-print-area tr,
+  #work-order-print-area dl > div {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+}

@@ -30,7 +30,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   return (
     <div className="min-h-screen bg-canvas text-ink">
-      <aside className="fixed inset-y-0 left-0 z-20 hidden w-64 flex-col border-r border-white/10 bg-navy text-white lg:flex">
+      <aside className="fixed inset-y-0 left-0 z-20 hidden w-64 flex-col border-r border-white/10 bg-navy text-white lg:flex print:hidden">
         <div className="px-5 pb-5 pt-7">
           <Link href="/" className="flex items-center gap-3">
             <span className="grid h-10 w-10 shrink-0 place-items-center overflow-hidden rounded-lg border border-white/20 bg-[#f4efe6] p-1"><Image src="/arch-design-studio-mark.png" alt="Arch Design Studio logo" width={40} height={40} className="h-full w-full object-contain" priority /></span>
@@ -45,12 +45,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <OneDriveConnectionStatus />
         </div>
       </aside>
-      <div className="lg:pl-64">
-        <header className="sticky top-0 z-10 flex h-16 items-center border-b border-line bg-canvas/95 px-5 backdrop-blur lg:px-10">
+      <div className="lg:pl-64 print:pl-0">
+        <header className="sticky top-0 z-10 flex h-16 items-center border-b border-line bg-canvas/95 px-5 backdrop-blur lg:px-10 print:hidden">
           <Link href="/" className="flex items-center gap-2 lg:hidden"><span className="grid h-8 w-8 shrink-0 place-items-center overflow-hidden rounded border border-line bg-[#f4efe6] p-0.5"><Image src="/arch-design-studio-mark.png" alt="Arch Design Studio logo" width={32} height={32} className="h-full w-full object-contain" priority /></span><span className="font-serif text-lg">Arch Design Studio</span></Link>
           <p className="hidden text-sm text-muted lg:block">Project operations workspace</p>
         </header>
-        <main className="mx-auto max-w-[1480px] px-5 py-8 lg:px-10 lg:py-10">{children}</main>
+        <main className="mx-auto max-w-[1480px] px-5 py-8 lg:px-10 lg:py-10 print:max-w-none print:p-0">{children}</main>
       </div>
     </div>
   );

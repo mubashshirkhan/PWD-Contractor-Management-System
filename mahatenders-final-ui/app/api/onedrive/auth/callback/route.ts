@@ -6,8 +6,11 @@ import { getTokenCacheStore } from "@/lib/onedrive/token-cache";
 
 export const runtime = "nodejs";
 
-function finish(request: NextRequest, result: "connected" | "error") {
-  const response = NextResponse.redirect(new URL(`/?onedrive=${result}`, request.nextUrl.origin));
+function finish(request: NextRequest, result: "connected" | "error", previousCacheCleanupFailed = false) {
+  const destination = new URL("/", request.nextUrl.origin);
+  destination.searchParams.set("onedrive", result);
+  if (previousCacheCleanupFailed) destination.searchParams.set("cache_cleanup", "failed");
+  const response = NextResponse.redirect(destination);
   response.cookies.set(oauthCookieName(), "", cookieOptions(0));
   return response;
 }
@@ -35,11 +38,17 @@ export async function GET(request: NextRequest) {
     });
     if (!result?.account) return finish(request, "error");
 
+    let previousCacheCleanupFailed = false;
     if (transaction.previousSessionId && transaction.previousSessionId !== transaction.sessionId) {
-      await getTokenCacheStore().delete(transaction.previousSessionId).catch(() => undefined);
+      try {
+        await getTokenCacheStore().delete(transaction.previousSessionId);
+      } catch {
+        // Keep the newly authenticated session working, but show a safe warning.
+        previousCacheCleanupFailed = true;
+      }
     }
 
-    const response = finish(request, "connected");
+    const response = finish(request, "connected", previousCacheCleanupFailed);
     response.cookies.set(sessionCookieName(), transaction.sessionId, cookieOptions(60 * 60 * 24 * 30));
     return response;
   } catch {
