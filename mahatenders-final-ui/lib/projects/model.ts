@@ -6,7 +6,7 @@ export const MILESTONE_TABLE = "MilestonesTable";
 export const PROJECT_SHEET = "Projects";
 export const MILESTONE_SHEET = "Milestones";
 export const PROJECT_WORKBOOK = "ProjectTracking.xlsx";
-export const PROJECT_FOLDER = "Project Tracking";
+export const PROJECT_FOLDER = "Project Management/Project Tracking";
 
 export const PROJECT_COLUMNS = [
   "ProjectId", "ProjectName", "ClientDepartment", "Location", "Description", "ContractValue",
