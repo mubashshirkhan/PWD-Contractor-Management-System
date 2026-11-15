@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { queryKeys } from "@/lib/query-keys";
-import { FilePlus2, Pencil, RefreshCw, Save, Trash2, X } from "lucide-react";
+import { Download, FilePlus2, Pencil, RefreshCw, Save, Trash2, X } from "lucide-react";
 import { SectionHeader } from "@/components/section-header";
 
 type Type = "Money Received" | "Expense";
@@ -31,6 +31,7 @@ export function PaymentsExpenses() {
   const data = paymentsQuery.data ?? null;
   const loading = paymentsQuery.isPending;
   const [busy, setBusy] = useState(false); const [error, setError] = useState(""); const [notice, setNotice] = useState(""); const [query, setQuery] = useState(""); const [typeFilter, setTypeFilter] = useState("All types"); const [dateFrom, setDateFrom] = useState(""); const [dateTo, setDateTo] = useState(""); const [selectedId, setSelectedId] = useState<string | null>(null); const [formOpen, setFormOpen] = useState(false); const [editing, setEditing] = useState(false); const [draft, setDraft] = useState<Draft>(emptyDraft());
+  const [exporting, setExporting] = useState(false);
   useEffect(() => {
     if (data) setSelectedId((id) => id && data.transactions.some((transaction) => transaction.transactionId === id) ? id : data.transactions[0]?.transactionId ?? null);
     if (paymentsQuery.error instanceof Error) setError(paymentsQuery.error.message);
@@ -51,14 +52,67 @@ export function PaymentsExpenses() {
   async function save(event: React.FormEvent) { event.preventDefault(); if (!data) return; setBusy(true); setError(""); setNotice(""); try { const payload = { ...draft, projectId: draft.projectId || null, amount: Number(draft.amount), paymentMethod: draft.paymentMethod || null, remarks: draft.remarks || null }; const response = await fetch(editing && selected ? `/api/payments/${encodeURIComponent(selected.transactionId)}` : "/api/payments", { method: editing ? "PATCH" : "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) }); const saved = await responseJson<Transaction>(response); setFormOpen(false); await refreshPaymentRelatedData(); setSelectedId(saved.transactionId); setNotice("Transaction saved and confirmed in OneDrive."); } catch (cause) { setError(cause instanceof Error ? cause.message : "Transaction could not be saved."); } finally { setBusy(false); } }
   async function initialize() { setBusy(true); setError(""); setNotice(""); try { await responseJson(await fetch("/api/payments/initialize", { method: "POST" })); await refreshPaymentRelatedData(); setNotice("PaymentsExpenses.xlsx is ready in OneDrive."); } catch (cause) { setError(cause instanceof Error ? cause.message : "Workbook could not be initialized."); } finally { setBusy(false); } }
   async function remove(transaction: Transaction) { if (!window.confirm(`Delete this ${transaction.type.toLowerCase()} transaction for ${inr(transaction.amount)}?`)) return; setBusy(true); setError(""); setNotice(""); try { await responseJson(await fetch(`/api/payments/${encodeURIComponent(transaction.transactionId)}`, { method: "DELETE" })); await refreshPaymentRelatedData(); setNotice("Transaction deleted and confirmed in OneDrive."); } catch (cause) { setError(cause instanceof Error ? cause.message : "Transaction could not be deleted."); } finally { setBusy(false); } }
+  async function exportExcel() {
+    if (!data?.initialized || exporting) return;
+    setExporting(true); setError(""); setNotice("");
+    try {
+      const { Workbook } = await import("exceljs");
+      const workbook = new Workbook();
+      const worksheet = workbook.addWorksheet("Transactions");
+      worksheet.columns = [
+        { header: "Date", key: "date", width: 14 },
+        { header: "Description", key: "description", width: 36 },
+        { header: "Project", key: "project", width: 28 },
+        { header: "Type", key: "type", width: 18 },
+        { header: "Amount (INR)", key: "amount", width: 18 },
+        { header: "Payment Method", key: "paymentMethod", width: 20 },
+        { header: "Reference / Remarks", key: "remarks", width: 36 },
+        { header: "Transaction ID", key: "transactionId", width: 34 },
+        { header: "Created At", key: "createdAt", width: 24 },
+        { header: "Updated At", key: "updatedAt", width: 24 },
+      ];
+      for (const transaction of filtered) {
+        worksheet.addRow({
+          date: transaction.date,
+          description: transaction.description,
+          project: transaction.projectName ?? "General",
+          type: transaction.type,
+          amount: transaction.amount,
+          paymentMethod: transaction.paymentMethod ?? "",
+          remarks: transaction.remarks ?? "",
+          transactionId: transaction.transactionId,
+          createdAt: transaction.createdAt,
+          updatedAt: transaction.updatedAt,
+        });
+      }
+      worksheet.getRow(1).font = { bold: true };
+      worksheet.autoFilter = { from: "A1", to: "J1" };
+      worksheet.views = [{ state: "frozen", ySplit: 1 }];
+      const bytes = await workbook.xlsx.writeBuffer();
+      const blob = new Blob([bytes], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `payments-expenses-${today()}.xlsx`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+      setNotice(`Downloaded ${filtered.length} filtered transaction${filtered.length === 1 ? "" : "s"} as Excel.`);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Excel export failed.");
+    } finally {
+      setExporting(false);
+    }
+  }
   const update = (key: keyof Draft, value: string) => setDraft((current) => ({ ...current, [key]: value }));
   const totals = data?.initialized ? data.totals : null;
   const summary = [["Total Received", totals ? inr(totals.totalReceived) : "—"], ["Total Expenses", totals ? inr(totals.totalExpenses) : "—"], ["Total Paid", totals ? inr(totals.totalPaid) : "—"], ["Remaining Balance", totals ? inr(totals.remainingBalance) : "—"]];
   return <div>
-    <SectionHeader eyebrow="Project operations" title="Payments & Expenses" description="Record money received and expenses in one simple register." action={<div className="flex gap-2"><button className={quiet} onClick={() => void load()} disabled={loading || busy}><RefreshCw size={16}/> Refresh</button><button className={button} onClick={create} disabled={!data?.initialized}><FilePlus2 size={16}/> Add Transaction</button></div>} />
+    <SectionHeader eyebrow="Project operations" title="Payments & Expenses" description="Record money received and expenses in one simple register." action={<div className="flex flex-wrap gap-2"><button className={quiet} onClick={() => void load()} disabled={loading || busy}><RefreshCw size={16}/> Refresh</button><button className={quiet} onClick={() => void exportExcel()} disabled={!data?.initialized || exporting || loading}><Download size={16}/>{exporting ? "Preparing Excel…" : "Export Excel"}</button><button className={button} onClick={create} disabled={!data?.initialized}><FilePlus2 size={16}/> Add Transaction</button></div>} />
     <p className="-mt-3 mb-5 text-xs text-muted">Overall recorded totals only; these are not audited accounts. Saved expenses count as paid outflows.</p>
     {error && <p role="alert" className="mb-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800">{error}</p>}{notice && <p role="status" className="mb-4 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">{notice}</p>}
-    {!loading && data && !data.initialized && <section className={`${card} mb-5`}><p className="text-xs font-semibold uppercase tracking-[.18em] text-copper">OneDrive register not initialized</p><h2 className="mt-2 font-serif text-2xl">{data.folderExists ? "Set up transaction storage" : "Financial Management folder not found"}</h2><p className="mt-2 max-w-2xl text-sm leading-6 text-muted">{data.folderExists ? "Initialize PaymentsExpenses.xlsx in the existing Arch Design Studio/Financial Management folder. No folders or transaction records will be created." : "Create the Financial Management folder inside your existing Arch Design Studio OneDrive folder, then refresh. The app will not create a duplicate folder."}</p><button className={`${data.folderExists ? button : quiet} mt-4`} onClick={() => data.folderExists ? void initialize() : void load()} disabled={busy || loading}>{data.folderExists ? "Initialize workbook" : "Refresh after creating folder"}</button></section>}
+    {!loading && data && !data.initialized && <section className={`${card} mb-5`}><p className="text-xs font-semibold uppercase tracking-[.18em] text-copper">OneDrive register not initialized</p><h2 className="mt-2 font-serif text-2xl">{data.folderExists ? "Set up transaction storage" : "Payments and Expenses folder not found"}</h2><p className="mt-2 max-w-2xl text-sm leading-6 text-muted">{data.folderExists ? "Initialize PaymentsExpenses.xlsx in the existing Arch Design Studio/Financial Management/Payments and Expenses folder. No folders or transaction records will be created." : "Create the Payments and Expenses folder inside your existing Arch Design Studio/Financial Management folder, then refresh. The app will not create a duplicate folder."}</p><button className={`${data.folderExists ? button : quiet} mt-4`} onClick={() => data.folderExists ? void initialize() : void load()} disabled={busy || loading}>{data.folderExists ? "Initialize workbook" : "Refresh after creating folder"}</button></section>}
     <section className="mb-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">{summary.map(([label, value]) => <article className={card} key={label}><p className="text-xs font-medium uppercase tracking-wide text-muted">{label}</p><p className="mt-2 break-words font-serif text-2xl text-ink">{value}</p></article>)}</section>
     <section className={card}>
       <div className="mb-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4"><label className="text-sm text-muted sm:col-span-2">Search transactions<input className={field} value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Description or project"/></label><label className="text-sm text-muted">Type<select className={field} value={typeFilter} onChange={(event) => setTypeFilter(event.target.value)}><option>All types</option>{types.map((type) => <option key={type}>{type}</option>)}</select></label><div className="grid grid-cols-2 gap-2"><label className="text-sm text-muted">From<input className={field} type="date" value={dateFrom} onChange={(event) => setDateFrom(event.target.value)}/></label><label className="text-sm text-muted">To<input className={field} type="date" value={dateTo} onChange={(event) => setDateTo(event.target.value)}/></label></div></div>

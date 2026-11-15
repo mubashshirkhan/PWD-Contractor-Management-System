@@ -9,9 +9,10 @@
 }
 
 * { box-sizing: border-box; }
-html { scroll-behavior: smooth; }
-body { margin: 0; background: var(--background); color: var(--foreground); }
+html { scroll-behavior: smooth; max-width: 100%; overflow-x: clip; }
+body { margin: 0; max-width: 100%; overflow-x: clip; background: var(--background); color: var(--foreground); }
 button, input, select { font: inherit; }
+main, main > *, section, article { min-width: 0; }
 ::selection { background: #e4c4ad; color: #282624; }
 
 @layer components {
@@ -25,6 +26,15 @@ button, input, select { font: inherit; }
     @apply border-b border-line px-4 py-3 align-top text-sm;
   }
   .data-table tr:last-child td { @apply border-b-0; }
+}
+
+@media (max-width: 1024px) {
+  button { min-height: 44px; }
+}
+
+@media (max-width: 639px) {
+  .data-table th,
+  .data-table td { padding-left: 0.75rem; padding-right: 0.75rem; }
 }
 
 @media print {
