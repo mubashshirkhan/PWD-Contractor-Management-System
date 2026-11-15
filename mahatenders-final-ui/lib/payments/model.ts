@@ -1,4 +1,4 @@
-export const PAYMENTS_FOLDER = "Financial Management";
+export const PAYMENTS_FOLDER = "Financial Management/Payments and Expenses";
 export const PAYMENTS_WORKBOOK = "PaymentsExpenses.xlsx";
 export const PAYMENTS_SHEET = "Transactions";
 export const PAYMENTS_TABLE = "Transactions";
